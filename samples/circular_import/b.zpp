@@ -1,0 +1,9 @@
+import "a.zpp";
+
+export fn b() {
+  
+}
+
+test "b" {
+  a();
+}
