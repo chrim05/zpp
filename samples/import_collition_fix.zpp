@@ -1,0 +1,10 @@
+-- Broken code
+import "std:io.zpp";
+import "some_pck:custom_io.zpp";
+-- error: collition with 'print' symbol
+
+-- Fixed code
+import "std:io.zpp";
+import "some:custom_io.zpp" with {
+  print as custom_print
+};
