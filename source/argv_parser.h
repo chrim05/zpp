@@ -1,12 +1,13 @@
 #pragma once
 #include "/pck/sys/include/sys.h"
 #include <stdio.h>
-#include "utils.h"
+#include "/pck/sys/include/cstrings.h"
 
 constexpr u8 FlagChar = '+';
 
 constexpr u8 TaskTagHelp = 0;
 constexpr u8 TaskTagVersion = 1;
+constexpr u8 TaskTagAstGen = 2;
 
 // ! handles a parsed version of `argv`
 struct ArgvTable {
@@ -31,11 +32,13 @@ error GetTaskTagFromRepr(u8 const* task_repr, u8* task_tag_out) {
     *task_tag_out = TaskTagHelp;
   else if (CStringsAreEqual(task_repr, static_cstring("version")))
     *task_tag_out = TaskTagVersion;
+  else if (CStringsAreEqual(task_repr, static_cstring("astgen")))
+    *task_tag_out = TaskTagAstGen;
   else
     // unknown task
-    return err;
+    return Err;
   
-  return ok;
+  return Ok;
 }
 
 // ! check input source isn't specified multiple times
@@ -44,11 +47,11 @@ error SetInputSource(ArgvTable* self, u8 const* input_source) {
   // expecting input source not to be already specified
   if (self->InputSource != nullptr) {
     printf("input source specified multiple times\n");
-    return err;
+    return Err;
   }
 
   self->InputSource = input_source;
-  return ok;
+  return Ok;
 }
 
 // ! take a flag value and return the length of its name
@@ -62,10 +65,7 @@ u32 GetFlagNameLength(u8 const* flag) {
   while (*flag != ':' and *flag != '\0')
     flag++;
   
-  // the `- 1` is because `*flag != ':' and ...` will fail
-  // only when flag is already pointing to the end character
-  // but the end char is not part of the length of the name
-  return flag - 1 - original_flag_ptr;
+  return flag - original_flag_ptr;
 }
 
 // ! take the value of the flag, without the `FlagChar`
@@ -75,17 +75,18 @@ error ParseFlagAndUpdateArgvTable(ArgvTable* self, u8 const* flag) {
 
   if (flag_name_len == 0) {
     printf("empty flag '+%s'\n", flag);
-    return err;
+    return Err;
   }
 
   // finding the matching flag, ensuring their length are equal
   if (flag_name_len == 3 && FixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
     Todo;
-  else
-    // unknown flag
-    return err;
+  else {
+    printf("unknown flag '%.*s'\n", flag_name_len, flag);
+    return Err;
+  }
   
-  return ok;
+  return Ok;
 }
 
 // ! analyze the parameters passed from the command line
@@ -94,7 +95,7 @@ error ParseFlagAndUpdateArgvTable(ArgvTable* self, u8 const* flag) {
 // ! here `argc` can be 0 when no param is passed to the executable (not 1)
 error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
   if (argc == 0)
-    return ok;
+    return Ok;
   
   // parsing the task and checking for its validity
   auto task = argv[0];
@@ -109,12 +110,10 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
 
     // checking whether arg is a flag or an input file
     if (arg[0] == FlagChar)
-      try(ParseFlagAndUpdateArgvTable(self, arg + 1), {
-        printf("unknown flag\n");
-      });
+      try(ParseFlagAndUpdateArgvTable(self, arg + 1), {});
     else
       try(SetInputSource(self, arg), {});
   }
 
-  return ok;
+  return Ok;
 }

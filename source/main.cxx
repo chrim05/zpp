@@ -17,7 +17,7 @@ error Main(u32 argc, u8 const* const* argv) {
   // running the task
   try(CompilationTaskRun(&argv_table), {});
 
-  return ok;
+  return Ok;
 }
 
 int main(int argc, char** argv) {

@@ -14,8 +14,10 @@ if dir != cwd:
 argv = argv[1:]
 
 COMPILER = 'g++'
-BASE_FLAGS = f'-Wall'
+LINK = '-lpthread'
+BASE_FLAGS = '-Wall'
 OPTIMIZATION_LEVEL = 3 if 'release' in argv else 0
+LIBS = '/pck/mimalloc/lib/mimalloc.a'
 
 def cmd(c):
   print(f'[!] launching: {c}')
@@ -43,4 +45,4 @@ if __name__ == '__main__':
     if file.endswith('.cxx'):
       make_pass(f'bin/{file.removesuffix(".cxx")}.o', '-c *.o')
   
-  exit(make_pass('bin/zpp', f'source/main.cxx'))
+  exit(make_pass('bin/zpp', f'source/main.cxx {LIBS} {LINK}'))
