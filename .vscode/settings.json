@@ -1,0 +1,9 @@
+{
+  "files.associations": {
+    "run_test": "shellscript",
+    "*.key": "lua",
+    "*.ns": "cpp",
+    "*.sn": "c",
+    "optional": "cpp"
+  }
+}

@@ -1,7 +1,7 @@
 #pragma once
 #include "/pck/sys/include/sys.h"
-#include "utils.h"
 #include <stdio.h>
+#include "utils.h"
 
 constexpr u8 FlagChar = '+';
 
@@ -51,7 +51,40 @@ error SetInputSource(ArgvTable* self, u8 const* input_source) {
   return ok;
 }
 
-error ParseFlag(ArgvTable* self, u8 const* flag) {
+// ! take a flag value and return the length of its name
+// ! the name can be the entire flag value or just the beginning part
+// ! for example with `+use-bla-bla` the length is the entire flag value
+// ! with `+opt:1` the length is just 3 `opt`
+u32 GetFlagNameLength(u8 const* flag) {
+  auto original_flag_ptr = flag;
+
+  // until flag points to the end char of the flag name
+  while (*flag != ':' and *flag != '\0')
+    flag++;
+  
+  // the `- 1` is because `*flag != ':' and ...` will fail
+  // only when flag is already pointing to the end character
+  // but the end char is not part of the length of the name
+  return flag - 1 - original_flag_ptr;
+}
+
+// ! take the value of the flag, without the `FlagChar`
+// ! and update the argv table
+error ParseFlagAndUpdateArgvTable(ArgvTable* self, u8 const* flag) {
+  auto flag_name_len = GetFlagNameLength(flag);
+
+  if (flag_name_len == 0) {
+    printf("empty flag '+%s'\n", flag);
+    return err;
+  }
+
+  // finding the matching flag, ensuring their length are equal
+  if (flag_name_len == 3 && FixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
+    Todo;
+  else
+    // unknown flag
+    return err;
+  
   return ok;
 }
 
@@ -68,6 +101,7 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
   try(GetTaskTagFromRepr(task, &self->TaskTag), {
     printf("unknown task '%s'\n", task);
   });
+
   // for all remaining arguments
   // exluding the task
   while (--argc) {
@@ -75,7 +109,9 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
 
     // checking whether arg is a flag or an input file
     if (arg[0] == FlagChar)
-      try(ParseFlag(self, arg), {});
+      try(ParseFlagAndUpdateArgvTable(self, arg + 1), {
+        printf("unknown flag\n");
+      });
     else
       try(SetInputSource(self, arg), {});
   }

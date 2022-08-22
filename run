@@ -1,1 +1,1 @@
-./build.py && bin/zpp; echo 'exit code:' $?
+./build.py && bin/zpp "$@"; echo '[!] exit code:' $?

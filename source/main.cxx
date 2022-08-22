@@ -4,8 +4,6 @@
 #include "compilation_manager.h"
 #include <stdio.h>
 
-#define EXIT_SUCCESS 0
-
 // ! the only one `zpp.exe` entry point
 error Main(u32 argc, u8 const* const* argv) {
   // creating a default argv table

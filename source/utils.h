@@ -1,17 +1,60 @@
 #pragma once
 #include "/pck/sys/include/sys.h"
+#include <stdlib.h>
+#include <stdio.h>
+
+// ! take two strings of the same length and compare them in the fastest possible way
+// ! code from `https://mgronhol.github.io/fast-strcmp/`
+u8 FixedCStringsAreEqual(u8 const* left, u8 const* right, u32 length) {
+  // ensuring the strings are at least of one character
+  // otherwise `offset` is potentially negative
+  Assert(length > 0);
+
+  u32 fast = length / sizeof(u64) + 1;
+  u32 offset = (fast - 1) * sizeof(u64);
+  u32 current_block = 0;
+
+  if(length <= sizeof(u64))
+    fast = 0;
+
+  auto lptr0 = (u64*)left;
+  auto lptr1 = (u64*)right;
+
+  while (current_block < fast) {
+    if (!(lptr0[current_block] ^ lptr1[current_block])) {
+      current_block++;
+      continue;
+    }
+
+    for (u32 pos = current_block * sizeof(u64); pos < length; pos++)
+      if ((left[pos] ^ right[pos]) || (left[pos] == 0) || (right[pos] == 0))
+        return left[pos] - right[pos];
+
+    current_block++;
+  }
+
+  while (length > offset) {
+    if (left[offset] ^ right[offset])
+      return left[offset] - right[offset];
+
+    offset++;
+  }
+	
+  return false;
+}
 
 // ! takes two null terminated strings and returns true whether they are equal
 u8 CStringsAreEqual(u8 const* left, u8 const* right) {
-  u8 c1, c2;
+  while (true) {
+    if (*left == *right) {
+      if (*left == '\0')
+        return true;
+    } else
+      return false;
+      
+    left++;
+    right++;
+  }
 
-  do {
-    c1 = *left++;
-    c2 = *right++;
-    
-    if (c1 == '\0')
-      return c1 - c2;
-  } while (c1 == c2);
-
-  return c1 - c2;
+  Unreachable;
 }
