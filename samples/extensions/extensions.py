@@ -12,10 +12,11 @@ def comptime_print(analyzer, call_node):
   print(final, end='')
 
 def type_to_string(analyzer, call_node):
+  global Value, Type
+
   analyzer.expect(len(call_node.args) == 0, 'unexpected args', call_node.args_pos)
   analyzer.expect(len(call_node.generic_args) == 1, 'expected "1" generic arg', call_node.generic_args_pos)
 
   type = analyzer.evaluate_type(call_node.generic_args[0])
-  Value, Type = analyzer.data_module.Value, analyzer.data_module.Type
   
   return Value(type=Type('comptime_string'), comptime_value=str(type))
