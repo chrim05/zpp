@@ -17,7 +17,7 @@ COMPILER = 'g++'
 LINK = '-lpthread'
 BASE_FLAGS = '-Wall'
 OPTIMIZATION_LEVEL = 3 if 'release' in argv else 0
-LIBS = '/pck/mimalloc/lib/mimalloc.a'
+LIBS = '/pck/sys/lib/*.o /pck/mimalloc/lib/mimalloc.a'
 
 def cmd(c):
   print(f'[!] launching: {c}')
@@ -33,16 +33,19 @@ def try_mkdir(dir):
     pass
 
 if __name__ == '__main__':
+  error = False
   try_mkdir('bin')
 
   for file in listdir('source'):
+    file = 'source/' + file
+
     if not isfile(file):
       continue
 
-    if file == 'main.cxx':
-      continue
-
     if file.endswith('.cxx'):
-      make_pass(f'bin/{file.removesuffix(".cxx")}.o', '-c *.o')
+      error += make_pass(f'bin/{file.removeprefix("source/").removesuffix(".cxx")}.o', f'{file} -c')
   
-  exit(make_pass('bin/zpp', f'source/main.cxx {LIBS} {LINK}'))
+  if error:
+    exit(1)
+  
+  exit(make_pass('bin/zpp', f'{LIBS} bin/*.o {LINK}'))

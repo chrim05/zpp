@@ -103,7 +103,7 @@ fn main(argc: u32, argv: **u8) exit: u8 {
       quit exit = 1;
     }
 
-    if (!parse_string_to_float::<f64>(argv[2], let radius)) {
+    if (!parse_string_to_float|f64|(argv[2], let radius)) {
       print("expected radius to be 'f64'");
       quit exit = 1;
     }
@@ -116,8 +116,8 @@ fn main(argc: u32, argv: **u8) exit: u8 {
     }
 
     if (
-      !parse_string_to_float::<f64>(argv[2], let side1) or
-      !parse_string_to_float::<f64>(argv[3], let side2)
+      !parse_string_to_float|f64|(argv[2], let side1) or
+      !parse_string_to_float|f64|(argv[3], let side2)
     ) {
       print("expected side1 and side2 to be 'f64'");
       quit exit = 1;
