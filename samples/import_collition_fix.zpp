@@ -6,5 +6,5 @@ import "some_pck:custom_io.zpp";
 -- Fixed code
 import "std:io.zpp";
 import "some:custom_io.zpp" with {
-  print as custom_print
+  Print as CustomPrint
 };

@@ -9,70 +9,70 @@ void ParseGlobalScope(ZppParser* self) {
 }
 
 void CollectIdentifierToken(ZppParser* self, Token* next_token_out) {
-  next_token_out->Tag = TokenTagIdentifier;
+  next_token_out->tag = TokenTagIdentifier;
   
   // eating all identifier chars
   while (!ReachedEof(self) and IsMiddleIdentifierChar(GetCurrentChar(self)))
-    self->Index++;
+    self->index++;
 
   // going back to the last identifier char
   // we go back because the caller will skip the last char
-  self->Index--;
+  self->index--;
 }
 
 void SetCurPos(ZppParser* self, SourceLocation* location_out) {
-  location_out->Index = self->Index;
-  location_out->SourceReference = self->SourceReference;
+  location_out->index = self->index;
+  location_out->source_reference = self->source_reference;
 }
 
 void TryToReplaceIdentifierWithKeyword(Token* token) {
   // skipping this practice for non identifier tokens
   // they will never be potential keywords
-  if (token->Tag != TokenTagIdentifier)
+  if (token->tag != TokenTagIdentifier)
     return;
   
   // checking for all keywords ensuring the lenght is the same of the token
-  if (token->Length == 2 and SmallFixedCStringsAreEqual( // fn
-    token->Location.SourceReference->Buffer + token->Location.Index, static_cstring("fn"), token->Length
+  if (token->length == 2 and SmallFixedCStringsAreEqual( // fn
+    token->location.source_reference->buffer + token->location.index, static_cstring("fn"), token->length
   ))
-    token->Tag = TokenTagKwFn;
+    token->tag = TokenTagKwFn;
 
-  else if (token->Length == 6 and SmallFixedCStringsAreEqual( // export
-    token->Location.SourceReference->Buffer + token->Location.Index, static_cstring("export"), token->Length
+  else if (token->length == 6 and SmallFixedCStringsAreEqual( // export
+    token->location.source_reference->buffer + token->location.index, static_cstring("export"), token->length
   ))
-    token->Tag = TokenTagKwExport;
+    token->tag = TokenTagKwExport;
   
-  // ? Dbg("token.value: '%.*s' | token.tag: %u", token->Length, token->Location.SourceReference->Buffer + token->Location.Index, token->Tag);
+  // ? Dbg("token.value: '%.*s' | token.tag: %u", token->length, token->location.source_reference->buffer + token->location.index, token->tag);
 }
 
 void CollectNextToken(ZppParser* self, Token* next_token_out) {
   EatWhitespaces(self);
 
   // initializing the start position of the token
-  SetCurPos(self, &next_token_out->Location);
+  SetCurPos(self, &next_token_out->location);
   auto current_char = GetCurrentChar(self);
 
   if (IsFirstIdentifierChar(current_char))
     CollectIdentifierToken(self, next_token_out);
   else
     switch (current_char) {
-      case '(': next_token_out->Tag = TokenTagSymLPar; break;
-      case ')': next_token_out->Tag = TokenTagSymRPar; break;
-      case ':': next_token_out->Tag = TokenTagSymColon; break;
-      case ',': next_token_out->Tag = TokenTagSymComma; break;
+      case '(': next_token_out->tag = TokenTagSymLPar; break;
+      case ')': next_token_out->tag = TokenTagSymRPar; break;
+      case ':': next_token_out->tag = TokenTagSymColon; break;
+      case ',': next_token_out->tag = TokenTagSymComma; break;
       default:
         ReportUnknownToken(next_token_out);
     }
   
   // initializing the end position of the token
-  next_token_out->Length = (self->Index + 1) - next_token_out->Location.Index;
+  next_token_out->length = (self->index + 1) - next_token_out->location.index;
 
   // when the token is an identifier and its value is a keyword
   // we set its tag to that keyword's one
   TryToReplaceIdentifierWithKeyword(next_token_out);
 
   // moving to the next character
-  self->Index++;
+  self->index++;
 }
 
 void CollectNextTokenAndExpect(ZppParser* self, Token* next_token_out, u8 expected_token_tag) {
@@ -81,7 +81,7 @@ void CollectNextTokenAndExpect(ZppParser* self, Token* next_token_out, u8 expect
 }
 
 void ExpectToken(Token const* found_token, u8 expected_token_tag) {
-  if (found_token->Tag != expected_token_tag)
+  if (found_token->tag != expected_token_tag)
     ReportExpectedAnotherToken(found_token, expected_token_tag);
 }
 
@@ -89,25 +89,28 @@ void ParseType(ZppParser* self) {
   Token type_name;
   CollectNextTokenAndExpect(self, &type_name, TokenTagIdentifier);
 
-  VisitTypeNameNotation(&self->AstVisitor, &type_name);
+  VisitTypeNameNotation(&self->ast_visitor, &type_name);
 }
 
-void ParseArgListDeclaration(ZppParser* self) {
+u16 ParseArgListDeclaration(ZppParser* self) {
   Token discard_token;
   CollectNextTokenAndExpect(self, &discard_token, TokenTagSymLPar);
 
   // parsing first arg name or close par
   CollectNextToken(self, &discard_token);
 
-  if (discard_token.Tag == TokenTagSymRPar)
-    return;
+  if (discard_token.tag == TokenTagSymRPar)
+    return 0;
+  
+  u16 number_of_args = 0;
 
   // parsing the args list declaration
   while (true) {
+    number_of_args++;
     // parsing the name
     ExpectToken(&discard_token, TokenTagIdentifier);   
 
-    VisitArgDeclaration(&self->AstVisitor, &discard_token);
+    VisitArgDeclaration(&self->ast_visitor, &discard_token);
 
     // parsing type notation
     CollectNextTokenAndExpect(self, &discard_token, TokenTagSymColon);
@@ -115,7 +118,7 @@ void ParseArgListDeclaration(ZppParser* self) {
 
     // checking for another arg
     CollectNextToken(self, &discard_token);
-    if (discard_token.Tag != TokenTagSymComma)
+    if (discard_token.tag != TokenTagSymComma)
       break;
     
     // collecting the name of the next arg
@@ -123,6 +126,12 @@ void ParseArgListDeclaration(ZppParser* self) {
   }
 
   ExpectToken(&discard_token, TokenTagSymRPar);
+  return number_of_args;
+}
+
+void UpdateNumberOfArgsInFnInstr(ZppParser* self, u16 number_of_args, u32 instr_index) {
+  auto internal_buffer = GetInternalBuffer(&self->ast_visitor.instructions);
+  internal_buffer[instr_index].value.fn_decl.args_count = number_of_args;
 }
 
 void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
@@ -130,10 +139,18 @@ void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
   Token name;
   CollectNextTokenAndExpect(self, &name, TokenTagIdentifier);
 
-  VisitFnDeclaration(&self->AstVisitor, modifier_export, &name);
+  auto instr_index = VisitFnDeclaration(
+    &self->ast_visitor,
+    &name.location,
+    modifier_export,
+    GetTokenValue(&name),
+    name.length
+  );
 
   // parsing fn name'(a: T, b: T2)'
-  ParseArgListDeclaration(self);
+  auto number_of_args = ParseArgListDeclaration(self);
+
+  UpdateNumberOfArgsInFnInstr(self, number_of_args, instr_index);
 }
 
 void ParseNextGlobalNode(ZppParser* self) {
@@ -145,12 +162,12 @@ void ParseNextGlobalNode(ZppParser* self) {
 
   // when the collected token is a modifier
   // we recollect the next and set the modifier option to true
-  if (cur_token.Tag == TokenTagKwExport) {
+  if (cur_token.tag == TokenTagKwExport) {
     modifier_export = true;
     CollectNextToken(self, &cur_token);
   }
 
-  switch (cur_token.Tag) {
+  switch (cur_token.tag) {
     case TokenTagKwFn:
       ParseFnGlobalNode(self, modifier_export);
       break;
@@ -162,7 +179,7 @@ void ParseNextGlobalNode(ZppParser* self) {
 
 void EatWhitespaces(ZppParser* self) {
   // eating all next whitespace until the buffer ends
-  for (; self->Index < self->SourceReference->BufferSize; self->Index++)
+  for (; self->index < self->source_reference->buffer_size; self->index++)
     // or until we match a char which is not a whitespace
     if (!IsWhitespaceChar(GetCurrentChar(self)))
       return;
@@ -174,7 +191,7 @@ u8 HasNextTokenAndEatWhitespaces(ZppParser* self) {
     return false;
   
   // otherwise we make sure that all the next characters are whitespace
-  for (; self->Index < self->SourceReference->BufferSize; self->Index++)
+  for (; self->index < self->source_reference->buffer_size; self->index++)
     if (!IsWhitespaceChar(GetCurrentChar(self)))
       // when find a non whitespace character it means there is a next token
       return true;

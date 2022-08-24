@@ -3,14 +3,14 @@
 
 // ! structure for handling the source code and its size
 struct CompilationInfo {
-  u64 BufferSize;
-  u8 const* Buffer;
+  u64 buffer_size;
+  u8 const* buffer;
   u8 const* Filename;
 };
 
 struct SourceLocation {
-  CompilationInfo* SourceReference;
-  u64 Index;
+  CompilationInfo* source_reference;
+  u64 index;
 };
 
 inline CompilationInfo CreateCompilationInfo(
@@ -19,8 +19,8 @@ inline CompilationInfo CreateCompilationInfo(
   u8 const* filename
 ) {
   return (CompilationInfo) {
-    .BufferSize = buffer_size,
-    .Buffer = buffer,
+    .buffer_size = buffer_size,
+    .buffer = buffer,
     .Filename = filename
   };
 }
@@ -42,13 +42,13 @@ u8 const* const TokenTagReprMap[] = {
 };
 
 struct Token {
-  u8 Tag;
-  u8 Length;
-  SourceLocation Location;
+  u8 tag;
+  u16 length;
+  SourceLocation location;
 };
 
 inline u8 const* GetTokenValue(Token const* token) {
-  return token->Location.SourceReference->Buffer + token->Location.Index;
+  return token->location.source_reference->buffer + token->location.index;
 }
 
 inline u8 const* TokenTagToString(u8 token_tag) {

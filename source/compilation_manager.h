@@ -41,8 +41,8 @@ inline void CalculateLineAndColumn(SourceLocation const* location, u32* line_out
   *line_out = 1;
   *column_out = 1;
 
-  for (u64 i = 0; i < location->Index; i++) {
-    auto c = location->SourceReference->Buffer[i];
+  for (u64 i = 0; i < location->index; i++) {
+    auto c = location->source_reference->buffer[i];
 
     if (c == '\n') {
       *line_out += 1;
@@ -59,23 +59,23 @@ inline void PrintErrorFirstPart(SourceLocation const* location) {
   u32 line, column;
   CalculateLineAndColumn(location, &line, &column);
 
-  printf("%s:%u:%hu: ", location->SourceReference->Filename, line, column);
+  printf("%s:%u:%hu: ", location->source_reference->Filename, line, column);
 }
 
 inline void ReportUnknownToken(Token const* token) {
-  PrintErrorFirstPart(&token->Location);
+  PrintErrorFirstPart(&token->location);
   printf("unknown token: `%c`\n", *GetTokenValue(token));
   exit(1);
 }
 
 inline void ReportUnexpectedTokenInGlobalContext(Token const* token) {
-  PrintErrorFirstPart(&token->Location);
-  printf("unexpected token in global context: `%.*s`\n", token->Length, GetTokenValue(token));
+  PrintErrorFirstPart(&token->location);
+  printf("unexpected token in global context: `%.*s`\n", token->length, GetTokenValue(token));
   exit(1);
 }
 
 inline void ReportExpectedAnotherToken(Token const* found_token, u8 expected_token_tag) {
-  PrintErrorFirstPart(&found_token->Location);
-  printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->Length, GetTokenValue(found_token));
+  PrintErrorFirstPart(&found_token->location);
+  printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->length, GetTokenValue(found_token));
   exit(1);
 }

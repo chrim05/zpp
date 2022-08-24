@@ -11,17 +11,17 @@ constexpr u8 TaskTagAstGen = 2;
 
 // ! handles a parsed version of `argv`
 struct ArgvTable {
-  i32 OptimizationLevel;
-  u8 TaskTag;
-  u8 const* InputSource;
+  i32 optimization_level;
+  u8 task_tag;
+  u8 const* input_source;
   // TODO when adding field here modify also the constructor
 };
 
 // ! constructor for ArgvTable
 inline void InitArgvTable(ArgvTable* argv) {
-  argv->OptimizationLevel = 0;
-  argv->TaskTag = TaskTagHelp;
-  argv->InputSource = nullptr;
+  argv->optimization_level = 0;
+  argv->task_tag = TaskTagHelp;
+  argv->input_source = nullptr;
 }
 
 // ! take the string representation of the task

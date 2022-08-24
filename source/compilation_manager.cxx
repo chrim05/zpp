@@ -5,7 +5,7 @@
 #include "/pck/sys/include/cstrings.h"
 
 error AstGen(ArgvTable const* self) {
-  if (self->InputSource == nullptr) {
+  if (self->input_source == nullptr) {
     printf("required 'input-file'\n");
     return Err;
   }
@@ -22,11 +22,11 @@ error AstGen(ArgvTable const* self) {
   // reading input file source to buffer
   {
     // opening 'input-file'
-    auto file = fopen((char const*)self->InputSource, "rb");
+    auto file = fopen((char const*)self->input_source, "rb");
 
     // checking that the file exists
-    if (file == nullptr or !IsRegularFile(self->InputSource)) {
-      printf("file '%s' not found\n", self->InputSource);
+    if (file == nullptr or !IsRegularFile(self->input_source)) {
+      printf("file '%s' not found\n", self->input_source);
       return Err;
     }
 
@@ -46,12 +46,12 @@ error AstGen(ArgvTable const* self) {
     fclose(file);
   }
 
-  auto compilation_info = CreateCompilationInfo(file_size, source_code_buffer, self->InputSource);
+  auto compilation_info = CreateCompilationInfo(file_size, source_code_buffer, self->input_source);
 
   // creating the parser instance
   ZppParser parser;
   InitZppParser(&parser, &chunk, &compilation_info);
-  InitIRGenerator(&parser.AstVisitor);
+  InitIRGenerator(&parser.ast_visitor);
 
   // parsing the file
   ParseGlobalScope(&parser);
@@ -61,7 +61,7 @@ error AstGen(ArgvTable const* self) {
 
 error CompilationTaskRun(ArgvTable const* self) {
   // running the task
-  switch (self->TaskTag) {
+  switch (self->task_tag) {
     case TaskTagHelp:
       printf(Help);
       break;

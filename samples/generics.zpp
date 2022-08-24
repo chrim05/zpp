@@ -1,10 +1,10 @@
 import "std:vector.zpp";
 
 test "std vector" {
-  let vec = create_empty_vector|Vec<i32>|();
+  let vec = CreateEmptyVector|Vec<i32>|();
 
-  vector_push(vec);
-  let one = vector_pop(vec);
+  VectorPush(vec);
+  let one = VectorPop(vec);
 
-  assert!(one == 1);
+  Assert!(one == 1);
 }

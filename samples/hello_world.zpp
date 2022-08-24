@@ -1,5 +1,5 @@
 import "std:io.zpp";
 
-fn main(argc: u32, argv: **u8) {
-  print("hello world");
+fn Main(argc: u32, argv: **u8) {
+  Print("hello world");
 }

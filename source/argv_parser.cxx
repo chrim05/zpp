@@ -17,12 +17,12 @@ error GetTaskTagFromRepr(u8 const* task_repr, u8* task_tag_out) {
 
 error SetInputSource(ArgvTable* self, u8 const* input_source) {
   // expecting input source not to be already specified
-  if (self->InputSource != nullptr) {
+  if (self->input_source != nullptr) {
     printf("input source specified multiple times\n");
     return Err;
   }
 
-  self->InputSource = input_source;
+  self->input_source = input_source;
   return Ok;
 }
 
@@ -61,7 +61,7 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
   
   // parsing the task and checking for its validity
   auto task = argv[0];
-  try(GetTaskTagFromRepr(task, &self->TaskTag), {
+  try(GetTaskTagFromRepr(task, &self->task_tag), {
     printf("unknown task '%s'\n", task);
   });
 

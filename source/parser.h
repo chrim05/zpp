@@ -5,22 +5,22 @@
 
 struct ZppParser {
   // contains the source code and its size
-  CompilationInfo* SourceReference;
-  MemRegion* Allocator;
+  CompilationInfo* source_reference;
+  MemRegion* allocator;
 
   // points to the current char
-  u64 Index;
+  u64 index;
 
   // the ast visitor
-  IRGenerator AstVisitor;
+  IRGenerator ast_visitor;
 };
 
 inline void InitZppParser(
   ZppParser* self, MemRegion* allocator, CompilationInfo* compilation_info
 ) {
-  self->SourceReference = compilation_info;
-  self->Allocator = allocator;
-  self->Index = 0;
+  self->source_reference = compilation_info;
+  self->allocator = allocator;
+  self->index = 0;
 }
 
 // ! return true whether `c` is a skippable character
@@ -63,11 +63,11 @@ inline u8 IsMiddleIdentifierChar(u8 c) {
 }
 
 inline u8 GetCurrentChar(ZppParser const* self) {
-  return self->SourceReference->Buffer[self->Index];
+  return self->source_reference->buffer[self->index];
 }
 
 inline u8 ReachedEof(ZppParser const* self) {
-  return self->Index >= self->SourceReference->BufferSize;
+  return self->index >= self->source_reference->buffer_size;
 }
 
 // ! return true whether there is at least one character (which is not whitespace)
