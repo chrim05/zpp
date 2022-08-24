@@ -1,60 +1,95 @@
 #pragma once
-#include "compilation_manager.h"
 #include "irgenerator.h"
 #include "/pck/sys/include/strings.h"
+#include "token.h"
 
 struct ZppParser {
   // contains the source code and its size
   CompilationInfo* SourceReference;
   MemRegion* Allocator;
+
   // points to the current char
   u64 Index;
+
   // the ast visitor
-  IRGenerator* AstVisitor;
+  IRGenerator AstVisitor;
 };
 
 inline void InitZppParser(
-  ZppParser* self, MemRegion* allocator, CompilationInfo* compilation_info,
-  IRGenerator* ir_generator
+  ZppParser* self, MemRegion* allocator, CompilationInfo* compilation_info
 ) {
   self->SourceReference = compilation_info;
   self->Allocator = allocator;
   self->Index = 0;
-  self->AstVisitor = ir_generator;
 }
-
-struct Token {
-  u8 TokenKind;
-  RangedString value;
-};
 
 // ! return true whether `c` is a skippable character
+// ! (such as ' ' '\n' ...)
 inline u8 IsWhitespaceChar(u8 c) {
   return
     c == ' ' or
     c == '\n' or
-    c == '\t';
+    c == '\t'
+  ;
 }
 
-inline u8 IsWhitespaceChar(u8 c) {
+inline u8 IsAlpha(u8 c) {
   return
-    c == ' ' or
-    c == '\n' or
-    c == '\t';
+    (c >= 'a' and c <= 'z') or
+    (c >= 'A' and c <= 'Z')
+  ;
 }
 
-inline u8 GetCurrentChar(ZppParser* self) {
+inline u8 IsDigit(u8 c) {
+  return
+    c >= '0' and c <= '9'
+  ;
+}
+
+// ! return true whether `c` is alpha or '_'
+inline u8 IsFirstIdentifierChar(u8 c) {
+  return
+    IsAlpha(c) or
+    c == '_'
+  ;
+}
+
+// ! return true whether `c` is alpha or '_' or num
+inline u8 IsMiddleIdentifierChar(u8 c) {
+  return
+    IsFirstIdentifierChar(c) or
+    IsDigit(c)
+  ;
+}
+
+inline u8 GetCurrentChar(ZppParser const* self) {
   return self->SourceReference->Buffer[self->Index];
+}
+
+inline u8 ReachedEof(ZppParser const* self) {
+  return self->Index >= self->SourceReference->BufferSize;
 }
 
 // ! return true whether there is at least one character (which is not whitespace)
 // ! `i` will be setted to the index of the first non whitespace character
 u8 HasNextTokenAndEatWhitespaces(ZppParser* self);
 
+void ParseFnGlobalNode(ZppParser* self);
+
 // ! parse a single global node (such as fn types ...)
-error VisitNextGlobalNode(ZppParser* self);
+void ParseNextGlobalNode(ZppParser* self);
 
 // ! parse the entire file
-void VisitGlobalScope(ZppParser* self);
+void ParseGlobalScope(ZppParser* self);
 
-error CollectNextToken(ZppParser* self, Token* next_token_out);
+void CollectNextToken(ZppParser* self, Token* next_token_out);
+
+void CollectNextTokenAndExpect(ZppParser* self, Token* next_token_out, u8 expected_token_tag);
+
+void CollectIdentifierToken(ZppParser* self, Token* next_token_out);
+
+void TryToReplaceIdentifierWithKeyword(Token* token);
+
+void EatWhitespaces(ZppParser* self);
+
+void ExpectToken(Token const* found_token, u8 expected_token_tag);

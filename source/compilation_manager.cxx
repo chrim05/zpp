@@ -1,8 +1,8 @@
 #include "compilation_manager.h"
-#include "parser.h"
 #include "irgenerator.h"
 #include "/pck/sys/include/dbg.h"
 #include "/pck/sys/include/collections.h"
+#include "/pck/sys/include/cstrings.h"
 
 error AstGen(ArgvTable const* self) {
   if (self->InputSource == nullptr) {
@@ -46,22 +46,15 @@ error AstGen(ArgvTable const* self) {
     fclose(file);
   }
 
-  auto compilation_info = CreateCompilationInfo(file_size, source_code_buffer);
-
-  // creating a dynamic sequence for containing
-  // all compilation errors
-  Vector<CompilationError> errors_bag;
-  InitVector<CompilationError>(&errors_bag, 100);
-
-  IRGenerator ir_generator;
-  InitIRGenerator(&ir_generator);
+  auto compilation_info = CreateCompilationInfo(file_size, source_code_buffer, self->InputSource);
 
   // creating the parser instance
   ZppParser parser;
-  InitZppParser(&parser, &chunk, &compilation_info, &ir_generator);
+  InitZppParser(&parser, &chunk, &compilation_info);
+  InitIRGenerator(&parser.AstVisitor);
 
   // parsing the file
-  VisitGlobalScope(&parser);
+  ParseGlobalScope(&parser);
 
   return Ok;
 }

@@ -15,7 +15,7 @@ argv = argv[1:]
 
 COMPILER = 'g++'
 LINK = '-lpthread'
-BASE_FLAGS = '-Wall'
+BASE_FLAGS = '-Wall' + (' -D RELEASE' if 'release' in argv else '')
 OPTIMIZATION_LEVEL = 3 if 'release' in argv else 0
 LIBS = '/pck/sys/lib/*.o /pck/mimalloc/lib/mimalloc.a'
 
