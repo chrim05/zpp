@@ -11,6 +11,8 @@
 // };
 
 constexpr u16 InstrTagDeclFn = 0;
+constexpr u16 InstrTagArgDecl = 1;
+constexpr u16 InstrTagMkTyped = 2;
 
 struct FnDecl {
   u8 const* name;
@@ -18,8 +20,21 @@ struct FnDecl {
   u16 args_count;
 };
 
+struct ArgDecl {
+  u8 const* name;
+  u16 name_length;
+};
+
+// ! u8 | ... | MyType | ...
+struct MkTypedFromName {
+  u8 const* name;
+  u16 name_length;
+};
+
 union InstructionValue {
   FnDecl fn_decl;
+  ArgDecl arg_decl;
+  MkTypedFromName mk_typed_from_name;
 };
 
 struct Instruction {
@@ -64,10 +79,22 @@ inline u32 VisitFnDeclaration(
   return VectorLength(&self->instructions) - 1;
 }
 
-inline void VisitArgDeclaration(IRGenerator* self, Token const* name) {
-  Dbg("arg -> %.*s", name->length, GetTokenValue(name));
+inline void VisitArgDeclaration(IRGenerator* self, u8 const* name, u16 name_length) {
+  Dbg("arg -> %.*s", name_length, name);
+  VectorPush(
+    &self->instructions,
+    CreateInstruction(InstrTagArgDecl, (InstructionValue) {
+      .arg_decl = (ArgDecl) { .name = name, .name_length = name_length }
+    })
+  );
 }
 
-inline void VisitTypeNameNotation(IRGenerator* self, Token const* type_name) {
-  Dbg("type -> %.*s", type_name->length, GetTokenValue(type_name));
+inline void VisitTypeNameNotationFromName(IRGenerator* self, u8 const* name, u16 name_length) {
+  Dbg("type -> %.*s", name_length, name);
+  VectorPush(
+    &self->instructions,
+    CreateInstruction(InstrTagMkTyped, (InstructionValue) {
+      .mk_typed_from_name = (MkTypedFromName) { .name = name, .name_length = name_length }
+    })
+  );
 }

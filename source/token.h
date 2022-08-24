@@ -29,10 +29,10 @@ constexpr u8 TokenTagUnknown = 0;
 constexpr u8 TokenTagIdentifier = 1;
 constexpr u8 TokenTagKwFn = 2;
 constexpr u8 TokenTagKwExport = 3;
-constexpr u8 TokenTagSymLPar = 4;
-constexpr u8 TokenTagSymRPar = 5;
-constexpr u8 TokenTagSymColon = 6;
-constexpr u8 TokenTagSymComma = 7;
+constexpr u8 TokenTagSymLPar = '(';
+constexpr u8 TokenTagSymRPar = ')';
+constexpr u8 TokenTagSymColon = ':';
+constexpr u8 TokenTagSymComma = ',';
 
 u8 const* const TokenTagReprMap[] = {
   static_cstring("unknown"),

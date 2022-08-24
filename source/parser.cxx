@@ -55,14 +55,7 @@ void CollectNextToken(ZppParser* self, Token* next_token_out) {
   if (IsFirstIdentifierChar(current_char))
     CollectIdentifierToken(self, next_token_out);
   else
-    switch (current_char) {
-      case '(': next_token_out->tag = TokenTagSymLPar; break;
-      case ')': next_token_out->tag = TokenTagSymRPar; break;
-      case ':': next_token_out->tag = TokenTagSymColon; break;
-      case ',': next_token_out->tag = TokenTagSymComma; break;
-      default:
-        ReportUnknownToken(next_token_out);
-    }
+    next_token_out->tag = current_char;
   
   // initializing the end position of the token
   next_token_out->length = (self->index + 1) - next_token_out->location.index;
@@ -89,7 +82,7 @@ void ParseType(ZppParser* self) {
   Token type_name;
   CollectNextTokenAndExpect(self, &type_name, TokenTagIdentifier);
 
-  VisitTypeNameNotation(&self->ast_visitor, &type_name);
+  VisitTypeNameNotationFromName(&self->ast_visitor, GetTokenValue(&type_name), type_name.length);
 }
 
 u16 ParseArgListDeclaration(ZppParser* self) {
@@ -110,7 +103,7 @@ u16 ParseArgListDeclaration(ZppParser* self) {
     // parsing the name
     ExpectToken(&discard_token, TokenTagIdentifier);   
 
-    VisitArgDeclaration(&self->ast_visitor, &discard_token);
+    VisitArgDeclaration(&self->ast_visitor, GetTokenValue(&discard_token), discard_token.length);
 
     // parsing type notation
     CollectNextTokenAndExpect(self, &discard_token, TokenTagSymColon);
