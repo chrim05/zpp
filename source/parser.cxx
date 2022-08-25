@@ -80,9 +80,21 @@ void ExpectToken(Token const* found_token, u8 expected_token_tag) {
 
 void ParseType(ZppParser* self) {
   Token type_name;
-  CollectNextTokenAndExpect(self, &type_name, TokenTagIdentifier);
+  CollectNextToken(self, &type_name);
 
-  VisitTypeNameNotationFromName(&self->ast_visitor, GetTokenValue(&type_name), type_name.length);
+  switch (type_name.tag) {
+    case TokenTagIdentifier:
+      VisitTypeMkTyped(&self->ast_visitor, GetTokenValue(&type_name), type_name.length);
+      break;
+
+    case TokenTagSymStar:
+      ParseType(self);
+      VisitTypeMkPtrTyped(&self->ast_visitor);
+      break;
+
+    default:
+      ReportUnexpectedToken(&type_name);
+  }
 }
 
 u16 ParseArgListDeclaration(ZppParser* self) {
@@ -122,9 +134,66 @@ u16 ParseArgListDeclaration(ZppParser* self) {
   return number_of_args;
 }
 
-void UpdateNumberOfArgsInFnInstr(ZppParser* self, u16 number_of_args, u32 instr_index) {
+void UpdateNumberOfArgsInFnInstr(ZppParser* self, u16 number_of_args, u64 instr_index) {
   auto internal_buffer = GetInternalBuffer(&self->ast_visitor.instructions);
   internal_buffer[instr_index].value.fn_decl.args_count = number_of_args;
+}
+
+void UpdateNumberOfStmtsInNamedBlockInstr(ZppParser* self, u64 number_of_stmts, u64 instr_index) {
+  auto internal_buffer = GetInternalBuffer(&self->ast_visitor.instructions);
+  internal_buffer[instr_index].value.named_block_decl.stmts_count = number_of_stmts;
+}
+
+// ! try to parse a stmt, return false when metches a bracket instead of a stmt
+u8 ParseStmt(ZppParser* self) {
+  Token token;
+  CollectNextToken(self, &token);
+
+  switch (token.tag) {
+    case TokenTagSymRBrace:
+      return false;
+    
+    case TokenTagSymSemicolon:
+      VisitPassStmt(&self->ast_visitor);
+      break;
+
+    default:
+      ReportUnexpectedToken(&token);
+  }
+
+  return true;
+}
+
+u64 ParseBlockContent(ZppParser* self) {
+  Token discard_token;
+  CollectNextTokenAndExpect(self, &discard_token, TokenTagSymLBrace);
+
+  u64 stmt_counter = 0;
+
+  while (ParseStmt(self))
+    stmt_counter++;
+  
+  // no need to expect RBrace because
+  // ParseStmt already did
+
+  return stmt_counter;
+}
+
+void ParseNamedBlock(ZppParser* self) {
+  // parsing 'e: T3'
+  Token name;
+  Token discard_token;
+  CollectNextTokenAndExpect(self, &name, TokenTagIdentifier);
+  CollectNextTokenAndExpect(self, &discard_token, TokenTagSymColon);
+  
+  auto instr_index = VisitBlockNameDeclaration(&self->ast_visitor, GetTokenValue(&name), name.length);
+  // parsing 'T3'
+  ParseType(self);
+
+  // parsing '{}'
+  auto stmts_count = ParseBlockContent(self);
+
+  UpdateNumberOfStmtsInNamedBlockInstr(self, stmts_count, instr_index);
 }
 
 void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
@@ -144,6 +213,9 @@ void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
   auto number_of_args = ParseArgListDeclaration(self);
 
   UpdateNumberOfArgsInFnInstr(self, number_of_args, instr_index);
+
+  // parsing fn name() 'e: T3 {}'
+  ParseNamedBlock(self);
 }
 
 void ParseNextGlobalNode(ZppParser* self) {

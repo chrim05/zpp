@@ -62,9 +62,9 @@ inline void PrintErrorFirstPart(SourceLocation const* location) {
   printf("%s:%u:%hu: ", location->source_reference->Filename, line, column);
 }
 
-inline void ReportUnknownToken(Token const* token) {
+inline void ReportUnexpectedToken(Token const* token) {
   PrintErrorFirstPart(&token->location);
-  printf("unknown token: `%c`\n", *GetTokenValue(token));
+  printf("unexpected token: %.*s\n", token->length, GetTokenValue(token));
   exit(1);
 }
 
@@ -76,6 +76,9 @@ inline void ReportUnexpectedTokenInGlobalContext(Token const* token) {
 
 inline void ReportExpectedAnotherToken(Token const* found_token, u8 expected_token_tag) {
   PrintErrorFirstPart(&found_token->location);
-  printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->length, GetTokenValue(found_token));
+  if (TokenTagIsSym(expected_token_tag))
+    printf("expected token `%c`, found `%.*s`\n", expected_token_tag, found_token->length, GetTokenValue(found_token));
+  else
+    printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->length, GetTokenValue(found_token));
   exit(1);
 }

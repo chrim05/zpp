@@ -33,6 +33,12 @@ constexpr u8 TokenTagSymLPar = '(';
 constexpr u8 TokenTagSymRPar = ')';
 constexpr u8 TokenTagSymColon = ':';
 constexpr u8 TokenTagSymComma = ',';
+constexpr u8 TokenTagSymStar = '*';
+constexpr u8 TokenTagSymLBrace = '{';
+constexpr u8 TokenTagSymRBrace = '}';
+constexpr u8 TokenTagSymLBrack = '[';
+constexpr u8 TokenTagSymRBrack = ']';
+constexpr u8 TokenTagSymSemicolon = ';';
 
 u8 const* const TokenTagReprMap[] = {
   static_cstring("unknown"),
@@ -51,6 +57,14 @@ inline u8 const* GetTokenValue(Token const* token) {
   return token->location.source_reference->buffer + token->location.index;
 }
 
+// ! return true whether `token_tag` is a symbol
+// ! (such as ! { } * , ...)
+inline u8 TokenTagIsSym(u8 token_tag) {
+  return token_tag >= '!';
+}
+
+// ! can only be used for non-sym tokens
 inline u8 const* TokenTagToString(u8 token_tag) {
+  Assert(TokenTagIsSym(token_tag));
   return TokenTagReprMap[token_tag];
 }
