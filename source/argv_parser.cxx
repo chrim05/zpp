@@ -45,7 +45,7 @@ error ParseFlagAndUpdateArgvTable(ArgvTable* self, u8 const* flag) {
   }
 
   // finding the matching flag, ensuring their length are equal
-  if (flag_name_len == 3 && FixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
+  if (flag_name_len == 3 && SmallFixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
     Todo;
   else {
     printf("unknown flag '%.*s'\n", flag_name_len, flag);

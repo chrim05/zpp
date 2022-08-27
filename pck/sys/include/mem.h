@@ -6,8 +6,8 @@
 constexpr error AllocErrTagOutOfMemory = Errn(1);
 
 struct MemRegion {
-  u32 buffer_size;
-  u32 buffer_used_size;
+  u64 buffer_size;
+  u64 buffer_used_size;
   u8* buffer_starting_pointer;
 
   MemRegion() {

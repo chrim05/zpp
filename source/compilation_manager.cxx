@@ -4,6 +4,50 @@
 #include "../pck/sys/include/collections.h"
 #include "../pck/sys/include/cstrings.h"
 
+void WriteIRToFile(IRGenerator const* self) {
+  auto output = fopen("a.out", "wb");
+
+  // writing the functions indexes
+  {
+    // writing the indexes count
+    fwrite(
+      (void const*)&self->functions.allocator.buffer_used_size,
+      1,
+      sizeof(u64),
+      output
+    );
+
+    // writing the indexes
+    fwrite(
+      (void const*)self->functions.allocator.buffer_starting_pointer,
+      1,
+      self->functions.allocator.buffer_used_size,
+      output
+    );
+  }
+
+  // writing the instructions
+  {
+    // writing the instructions count
+    fwrite(
+      (void const*)&self->instructions.allocator.buffer_used_size,
+      1,
+      sizeof(u64),
+      output
+    );
+
+    // writing the indexes
+    fwrite(
+      (void const*)self->instructions.allocator.buffer_starting_pointer,
+      1,
+      self->instructions.allocator.buffer_used_size,
+      output
+    );
+  }
+
+  fclose(output);
+}
+
 error AstGen(ArgvTable const* self) {
   if (self->input_source == nullptr) {
     printf("required 'input-file'\n");
@@ -56,6 +100,9 @@ error AstGen(ArgvTable const* self) {
   // parsing the file
   ParseGlobalScope(&parser);
 
+  // writing ir to file
+  WriteIRToFile(&parser.ast_visitor);
+
   return Ok;
 }
 
@@ -71,9 +118,7 @@ error CompilationTaskRun(ArgvTable const* self) {
       break;
     
     case TaskTagAstGen:
-      try(AstGen(self), {
-        printf("failed generating ast\n");
-      });
+      try(AstGen(self), {});
       break;
 
     default:
