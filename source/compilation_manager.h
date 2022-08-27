@@ -59,12 +59,12 @@ inline void PrintErrorFirstPart(SourceLocation const* location) {
   u32 line, column;
   CalculateLineAndColumn(location, &line, &column);
 
-  printf("%s:%u:%hu: ", location->source_reference->Filename, line, column);
+  printf("%s:%u:%hu: ", location->source_reference->filename, line, column);
 }
 
 inline void ReportUnexpectedToken(Token const* token) {
   PrintErrorFirstPart(&token->location);
-  printf("unexpected token: %.*s\n", token->length, GetTokenValue(token));
+  printf("unexpected token: `%.*s`\n", token->length, GetTokenValue(token));
   exit(1);
 }
 
@@ -80,5 +80,11 @@ inline void ReportExpectedAnotherToken(Token const* found_token, u8 expected_tok
     printf("expected token `%c`, found `%.*s`\n", expected_token_tag, found_token->length, GetTokenValue(found_token));
   else
     printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->length, GetTokenValue(found_token));
+  exit(1);
+}
+
+inline void ReportMalformedDigit(SourceLocation const* location, u8 invalid_char) {
+  PrintErrorFirstPart(location);
+  printf("malformed digit contains: `%c`\n", invalid_char);
   exit(1);
 }

@@ -13,6 +13,9 @@ struct ZppParser {
 
   // the ast visitor
   IRGenerator ast_visitor;
+
+  // the lexed token
+  Token current;
 };
 
 inline void InitZppParser(
@@ -40,7 +43,7 @@ inline u8 IsAlpha(u8 c) {
   ;
 }
 
-inline u8 IsDigit(u8 c) {
+inline u8 IsDigitChar(u8 c) {
   return
     c >= '0' and c <= '9'
   ;
@@ -58,7 +61,7 @@ inline u8 IsFirstIdentifierChar(u8 c) {
 inline u8 IsMiddleIdentifierChar(u8 c) {
   return
     IsFirstIdentifierChar(c) or
-    IsDigit(c)
+    IsDigitChar(c)
   ;
 }
 
@@ -82,14 +85,22 @@ void ParseNextGlobalNode(ZppParser* self);
 // ! parse the entire file
 void ParseGlobalScope(ZppParser* self);
 
-void CollectNextToken(ZppParser* self, Token* next_token_out);
+void CollectNextToken(ZppParser* self);
 
-void CollectNextTokenAndExpect(ZppParser* self, Token* next_token_out, u8 expected_token_tag);
+void CollectNextTokenAndExpect(ZppParser* self, u8 expected_token_tag);
 
-void CollectIdentifierToken(ZppParser* self, Token* next_token_out);
+void CollectIdentifierToken(ZppParser* self);
+
+void CollectDigitToken(ZppParser* self);
 
 void TryToReplaceIdentifierWithKeyword(Token* token);
 
 void EatWhitespaces(ZppParser* self);
 
 void ExpectToken(Token const* found_token, u8 expected_token_tag);
+
+u8 MatchToken(ZppParser* self, u8 token_tag_to_match);
+
+u16 ParseFnCall(ZppParser* self);
+
+void ParseExpression(ZppParser* self);

@@ -1,6 +1,8 @@
 #include "parser.h"
 #include "compilation_manager.h"
 
+#define DbgState ({ Dbg("token.value: '%.*s' | token.tag: %u", self->current.length, self->current.location.source_reference->buffer + self->current.location.index, self->current.tag); })
+
 void ParseGlobalScope(ZppParser* self) {
   // collecting all global nodes (such as functions types ...)
   // until the eof
@@ -8,8 +10,8 @@ void ParseGlobalScope(ZppParser* self) {
     ParseNextGlobalNode(self);
 }
 
-void CollectIdentifierToken(ZppParser* self, Token* next_token_out) {
-  next_token_out->tag = TokenTagIdentifier;
+void CollectIdentifierToken(ZppParser* self) {
+  self->current.tag = TokenTagIdentifier;
   
   // eating all identifier chars
   while (!ReachedEof(self) and IsMiddleIdentifierChar(GetCurrentChar(self)))
@@ -20,9 +22,36 @@ void CollectIdentifierToken(ZppParser* self, Token* next_token_out) {
   self->index--;
 }
 
-void SetCurPos(ZppParser* self, SourceLocation* location_out) {
-  location_out->index = self->index;
-  location_out->source_reference = self->source_reference;
+void CollectDigitToken(ZppParser* self) {
+  // the char looking at
+  u8 c = '\0';
+  self->current.tag = TokenTagDigit;
+  
+  // eating all digit chars
+  while (true) {
+    // preventing the malformed digit check on eof
+    // also no need to self->index--
+    if (ReachedEof(self))
+      return;
+
+    if (!IsDigitChar(c = GetCurrentChar(self)))
+      break;
+
+    self->index++;
+  }
+  
+  // checking for malformed digit
+  if (IsFirstIdentifierChar(c))
+    ReportMalformedDigit(&self->current.location, c);
+
+  // going back to the last digit char
+  // we go back because the caller will skip the last char
+  self->index--;
+}
+
+void SetCurPos(ZppParser* self) {
+  self->current.location.index = self->index;
+  self->current.location.source_reference = self->source_reference;
 }
 
 void TryToReplaceIdentifierWithKeyword(Token* token) {
@@ -42,35 +71,40 @@ void TryToReplaceIdentifierWithKeyword(Token* token) {
   ))
     token->tag = TokenTagKwExport;
   
-  // ? Dbg("token.value: '%.*s' | token.tag: %u", token->length, token->location.source_reference->buffer + token->location.index, token->tag);
+  else if (token->length == 4 and SmallFixedCStringsAreEqual( // quit
+    token->location.source_reference->buffer + token->location.index, static_cstring("quit"), token->length
+  ))
+    token->tag = TokenTagKwQuit;
 }
 
-void CollectNextToken(ZppParser* self, Token* next_token_out) {
+void CollectNextToken(ZppParser* self) {
   EatWhitespaces(self);
 
   // initializing the start position of the token
-  SetCurPos(self, &next_token_out->location);
+  SetCurPos(self);
   auto current_char = GetCurrentChar(self);
 
   if (IsFirstIdentifierChar(current_char))
-    CollectIdentifierToken(self, next_token_out);
+    CollectIdentifierToken(self);
+  else if (IsDigitChar(current_char))
+    CollectDigitToken(self);
   else
-    next_token_out->tag = current_char;
+    self->current.tag = current_char;
   
   // initializing the end position of the token
-  next_token_out->length = (self->index + 1) - next_token_out->location.index;
+  self->current.length = (self->index + 1) - self->current.location.index;
 
   // when the token is an identifier and its value is a keyword
   // we set its tag to that keyword's one
-  TryToReplaceIdentifierWithKeyword(next_token_out);
+  TryToReplaceIdentifierWithKeyword(&self->current);
 
   // moving to the next character
   self->index++;
 }
 
-void CollectNextTokenAndExpect(ZppParser* self, Token* next_token_out, u8 expected_token_tag) {
-  CollectNextToken(self, next_token_out);
-  ExpectToken(next_token_out, expected_token_tag);
+void CollectNextTokenAndExpect(ZppParser* self, u8 expected_token_tag) {
+  CollectNextToken(self);
+  ExpectToken(&self->current, expected_token_tag);
 }
 
 void ExpectToken(Token const* found_token, u8 expected_token_tag) {
@@ -79,12 +113,11 @@ void ExpectToken(Token const* found_token, u8 expected_token_tag) {
 }
 
 void ParseType(ZppParser* self) {
-  Token type_name;
-  CollectNextToken(self, &type_name);
+  CollectNextToken(self);
 
-  switch (type_name.tag) {
+  switch (self->current.tag) {
     case TokenTagIdentifier:
-      VisitTypeMkTyped(&self->ast_visitor, GetTokenValue(&type_name), type_name.length);
+      VisitTypeMkTyped(&self->ast_visitor, GetTokenValue(&self->current), self->current.length);
       break;
 
     case TokenTagSymStar:
@@ -93,18 +126,17 @@ void ParseType(ZppParser* self) {
       break;
 
     default:
-      ReportUnexpectedToken(&type_name);
+      ReportUnexpectedToken(&self->current);
   }
 }
 
 u16 ParseArgListDeclaration(ZppParser* self) {
-  Token discard_token;
-  CollectNextTokenAndExpect(self, &discard_token, TokenTagSymLPar);
+  CollectNextTokenAndExpect(self, TokenTagSymLPar);
 
   // parsing first arg name or close par
-  CollectNextToken(self, &discard_token);
+  CollectNextToken(self);
 
-  if (discard_token.tag == TokenTagSymRPar)
+  if (self->current.tag == TokenTagSymRPar)
     return 0;
   
   u16 number_of_args = 0;
@@ -113,24 +145,24 @@ u16 ParseArgListDeclaration(ZppParser* self) {
   while (true) {
     number_of_args++;
     // parsing the name
-    ExpectToken(&discard_token, TokenTagIdentifier);   
+    ExpectToken(&self->current, TokenTagIdentifier);   
 
-    VisitArgDeclaration(&self->ast_visitor, GetTokenValue(&discard_token), discard_token.length);
+    VisitArgDeclaration(&self->ast_visitor, GetTokenValue(&self->current), self->current.length);
 
     // parsing type notation
-    CollectNextTokenAndExpect(self, &discard_token, TokenTagSymColon);
+    CollectNextTokenAndExpect(self, TokenTagSymColon);
     ParseType(self);
 
     // checking for another arg
-    CollectNextToken(self, &discard_token);
-    if (discard_token.tag != TokenTagSymComma)
+    CollectNextToken(self);
+    if (self->current.tag != TokenTagSymComma)
       break;
     
     // collecting the name of the next arg
-    CollectNextToken(self, &discard_token);
+    CollectNextToken(self);
   }
 
-  ExpectToken(&discard_token, TokenTagSymRPar);
+  ExpectToken(&self->current, TokenTagSymRPar);
   return number_of_args;
 }
 
@@ -144,29 +176,165 @@ void UpdateNumberOfStmtsInNamedBlockInstr(ZppParser* self, u64 number_of_stmts, 
   internal_buffer[instr_index].value.named_block_decl.stmts_count = number_of_stmts;
 }
 
+u16 ParseFnCall(ZppParser* self) {
+  // skipping '('
+  CollectNextToken(self);
+
+  if (self->current.tag == TokenTagSymRPar)
+    return 0;
+  
+  u16 number_of_args = 0;
+
+  // parsing the args list
+  while (true) {
+    number_of_args++;
+
+    // parsing the arg
+    ParseExpression(self);
+
+    // checking for another arg
+    if (self->current.tag != TokenTagSymComma)
+      break;
+    
+    // skipping ','
+    CollectNextToken(self);
+  }
+
+  ExpectToken(&self->current, TokenTagSymRPar);
+  return number_of_args;
+}
+
+void ParseTerm(ZppParser* self) {
+  u8 const* ident_name = nullptr;
+  u64 ident_length = 0;
+
+  switch (self->current.tag) {
+    case TokenTagIdentifier:
+      ident_name = GetTokenValue(&self->current);
+      ident_length = self->current.length;
+      break;
+    
+    case TokenTagDigit:
+      VisitLoadDigit(&self->ast_visitor, ParseUInt(GetTokenValue(&self->current), self->current.length));
+      break;
+    
+    default:
+      ReportUnexpectedToken(&self->current);
+  }
+
+  CollectNextToken(self);
+
+  // parsing function call or load name
+  if ((ident_name != nullptr) & (self->current.tag == TokenTagSymLPar)) { // function call
+    auto args_count = ParseFnCall(self);
+    VisitCall(&self->ast_visitor, ident_name, ident_length, args_count);
+
+    // skipping the ')'
+    CollectNextToken(self);
+  } else if (ident_name != nullptr) // load name
+    VisitLoadName(&self->ast_visitor, ident_name, ident_length);
+
+  // parsing function dot expr
+  while (self->current.tag == TokenTagSymDot) {
+    // parsing field
+    CollectNextTokenAndExpect(self, TokenTagIdentifier);
+    VisitLoadField(&self->ast_visitor, GetTokenValue(&self->current), self->current.length);
+    
+    // skipping the field
+    CollectNextToken(self);
+  }
+}
+
+// * binary priority
+// 3 == != <= >=
+// 2 + -
+// 1 * / %
+
+void ParseBinPriority1(ZppParser* self) {
+  // parsing 'left' */ right
+  ParseTerm(self);
+
+  while (true) {
+    auto op = self->current.tag;
+
+    if ((op != TokenTagSymStar) & (op != TokenTagSymSlash))
+      break;
+    
+    // skipping the bin op
+    CollectNextToken(self);
+    // parsing left */ 'right'
+    ParseTerm(self);
+
+    VisitBinaryOperation(&self->ast_visitor, op);
+  }
+}
+
+// ! parse + -
+void ParseBinPriority2(ZppParser* self) {
+  // parsing 'left' +- right
+  ParseBinPriority1(self);
+
+  while (true) {
+    auto op = self->current.tag;
+
+    if ((op != TokenTagSymPlus) & (op != TokenTagSymMinus))
+      break;
+    
+    // skipping the bin op
+    CollectNextToken(self);
+    // parsing left +- 'right'
+    ParseBinPriority1(self);
+
+    VisitBinaryOperation(&self->ast_visitor, op);
+  }
+}
+
+void ParseExpression(ZppParser* self) {
+  ParseBinPriority2(self);
+}
+
+void ParseQuitStmt(ZppParser* self) {
+  // parsing quit 'a' =
+  CollectNextTokenAndExpect(self, TokenTagIdentifier);
+  auto name = GetTokenValue(&self->current);
+  auto name_length = self->current.length;
+
+  // parsing quit a '=' and skipping '='
+  CollectNextTokenAndExpect(self, TokenTagSymEqual);
+  CollectNextToken(self);
+
+  // parsing quit a = 'expr;'
+  ParseExpression(self);
+  ExpectToken(&self->current, TokenTagSymSemicolon);
+
+  VisitQuitStmt(&self->ast_visitor, name, name_length);
+};
+
 // ! try to parse a stmt, return false when metches a bracket instead of a stmt
 u8 ParseStmt(ZppParser* self) {
-  Token token;
-  CollectNextToken(self, &token);
+  CollectNextToken(self);
 
-  switch (token.tag) {
+  switch (self->current.tag) {
     case TokenTagSymRBrace:
       return false;
+    
+    case TokenTagKwQuit:
+      ParseQuitStmt(self);
+      break;
     
     case TokenTagSymSemicolon:
       VisitPassStmt(&self->ast_visitor);
       break;
 
     default:
-      ReportUnexpectedToken(&token);
+      ReportUnexpectedToken(&self->current);
   }
 
   return true;
 }
 
 u64 ParseBlockContent(ZppParser* self) {
-  Token discard_token;
-  CollectNextTokenAndExpect(self, &discard_token, TokenTagSymLBrace);
+  CollectNextTokenAndExpect(self, TokenTagSymLBrace);
 
   u64 stmt_counter = 0;
 
@@ -181,12 +349,13 @@ u64 ParseBlockContent(ZppParser* self) {
 
 void ParseNamedBlock(ZppParser* self) {
   // parsing 'e: T3'
-  Token name;
-  Token discard_token;
-  CollectNextTokenAndExpect(self, &name, TokenTagIdentifier);
-  CollectNextTokenAndExpect(self, &discard_token, TokenTagSymColon);
+  CollectNextTokenAndExpect(self, TokenTagIdentifier);
+  auto name = GetTokenValue(&self->current);
+  auto name_length = self->current.length;
+
+  CollectNextTokenAndExpect(self, TokenTagSymColon);
   
-  auto instr_index = VisitBlockNameDeclaration(&self->ast_visitor, GetTokenValue(&name), name.length);
+  auto instr_index = VisitBlockNameDeclaration(&self->ast_visitor, name, name_length);
   // parsing 'T3'
   ParseType(self);
 
@@ -198,15 +367,15 @@ void ParseNamedBlock(ZppParser* self) {
 
 void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
   // parsing fn 'name'
-  Token name;
-  CollectNextTokenAndExpect(self, &name, TokenTagIdentifier);
+  CollectNextTokenAndExpect(self, TokenTagIdentifier);
+  auto name = GetTokenValue(&self->current);
+  auto name_length = self->current.length;
 
   auto instr_index = VisitFnDeclaration(
     &self->ast_visitor,
-    &name.location,
     modifier_export,
-    GetTokenValue(&name),
-    name.length
+    name,
+    name_length
   );
 
   // parsing fn name'(a: T, b: T2)'
@@ -216,29 +385,35 @@ void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
 
   // parsing fn name() 'e: T3 {}'
   ParseNamedBlock(self);
+
+  catch(VectorPush(&self->ast_visitor.functions, instr_index), {
+    DbgString("Failed to add instr index to functions");
+  });
+}
+
+u8 MatchToken(ZppParser* self, u8 token_tag_to_match) {
+  if (self->current.tag == token_tag_to_match) {
+    CollectNextToken(self);
+    return true;
+  }
+
+  return false;
 }
 
 void ParseNextGlobalNode(ZppParser* self) {
+  // fecting the first global token
+  CollectNextToken(self);
+
   // has the modifier 'export' keyword before 'fn' 'type' ...
-  u8 modifier_export = false;
+  auto modifier_export = MatchToken(self, TokenTagKwExport);
 
-  Token cur_token;
-  CollectNextToken(self, &cur_token);
-
-  // when the collected token is a modifier
-  // we recollect the next and set the modifier option to true
-  if (cur_token.tag == TokenTagKwExport) {
-    modifier_export = true;
-    CollectNextToken(self, &cur_token);
-  }
-
-  switch (cur_token.tag) {
+  switch (self->current.tag) {
     case TokenTagKwFn:
       ParseFnGlobalNode(self, modifier_export);
       break;
 
     default:
-      ReportUnexpectedTokenInGlobalContext(&cur_token);
+      ReportUnexpectedTokenInGlobalContext(&self->current);
   }
 }
 
