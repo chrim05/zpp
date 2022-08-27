@@ -1,3 +1,16 @@
-# help about source
-`pck_symlink` is a symlink created with `ln -s /pck/ pck_symlink` which contains a simple library to make stuff easier to use
-`zpp-vscode-ext` is a symlink created with `ln -s ~/.vscode/extensions/zpp zpp-vscode-ext` which contains the vscode syntax highlighting for the zpp language
+# build
+`./build.py` or `./build.py release`
+
+# debug build
+`./run` or `./run args for zpp_binary`
+
+# install zpp vscode ext
+```
+cd ..
+rm -rf ~/.vscode/extensions/zpp
+# two options
+# option 1
+  mv zpp-vscode-ext ~/.vscode/extensions/zpp
+# option 2
+  cp -R zpp-vscode-ext ~/.vscode/extensions/zpp
+```
