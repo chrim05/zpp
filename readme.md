@@ -6,7 +6,6 @@
 
 # install zpp vscode ext
 ```
-cd ..
 rm -rf ~/.vscode/extensions/zpp
 # two options
 # option 1
