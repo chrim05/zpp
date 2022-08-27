@@ -10,18 +10,18 @@
 //   SourceLocation const* DeclLocation;
 // };
 
-constexpr u16 InstrTagDeclFn = 0;
-constexpr u16 InstrTagArgDecl = 1;
-constexpr u16 InstrTagMkTyped = 2;
-constexpr u16 InstrTagMkPtrTyped = 3;
-constexpr u16 InstrTagNamedBlockDecl = 4;
-constexpr u16 InstrTagPassStmt = 5;
-constexpr u16 InstrTagBin = 6;
-constexpr u16 InstrTagLoadName = 7;
-constexpr u16 InstrTagQuitStmt = 8;
-constexpr u16 InstrTagLoadDigit = 9;
-constexpr u16 InstrTagLoadField = 10;
-constexpr u16 InstrTagCall = 11;
+constexpr u8 InstrTagDeclFn = 0;
+constexpr u8 InstrTagArgDecl = 1;
+constexpr u8 InstrTagMkTyped = 2;
+constexpr u8 InstrTagMkPtrTyped = 3;
+constexpr u8 InstrTagNamedBlockDecl = 4;
+constexpr u8 InstrTagPassStmt = 5;
+constexpr u8 InstrTagBin = 6;
+constexpr u8 InstrTagLoadName = 7;
+constexpr u8 InstrTagQuitStmt = 8;
+constexpr u8 InstrTagLoadDigit = 9;
+constexpr u8 InstrTagLoadField = 10;
+constexpr u8 InstrTagCall = 11;
 
 union InstructionValue {
   struct {
@@ -72,18 +72,18 @@ union InstructionValue {
   struct { u8 op; } bin;
 };
 
-struct Instruction {
-  u16 tag;
-  InstructionValue value;
-};
-
 struct IRGenerator {
-  Vector<Instruction> instructions;
+  Vector<u8> instruction_tags;
+  MemRegion instruction_values;
   Vector<u64> functions;
 };
 
 inline void InitIRGenerator(IRGenerator* self) {
-  catch(InitVector(&self->instructions, 100'000), {
+  catch(InitVector(&self->instruction_tags, 100'000), {
+    DbgString("Failed to allocate IRGenerator instructions");
+  });
+
+  catch(InitMemRegion(&self->instruction_values, 100'000 * sizeof(InstructionValue)), {
     DbgString("Failed to allocate IRGenerator instructions");
   });
 
@@ -100,121 +100,129 @@ inline u64 VisitFnDeclaration(
   u16 name_length
 ) {
   Dbg("fn_decl modifier_export:%u '%.*s'", modifier_export, name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
 
-  i->tag = InstrTagDeclFn;
-  i->value.fn_decl.name = name;
-  i->value.fn_decl.name_length = name_length;
-  i->value.fn_decl.args_count = 0;
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagDeclFn);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  return VectorLength(&self->instructions) - 1;
+  i->fn_decl.name = name;
+  i->fn_decl.name_length = name_length;
+  i->fn_decl.args_count = 0;
+
+  // index of this instruction
+  return (self->instruction_values.buffer_used_size / sizeof(InstructionValue)) - 1;
 }
 
 inline void VisitArgDeclaration(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("arg_decl '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
 
-  i->tag = InstrTagArgDecl;
-  i->value.arg_decl.name = name;
-  i->value.arg_decl.name_length = name_length;
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagArgDecl);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
+
+  i->arg_decl.name = name;
+  i->arg_decl.name_length = name_length;
 }
 
 inline void VisitTypeMkTyped(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("mk_typed '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagMkTyped);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagMkTyped;
-  i->value.mk_typed.name = name;
-  i->value.mk_typed.name_length = name_length;
+  i->mk_typed.name = name;
+  i->mk_typed.name_length = name_length;
 }
 
 inline void VisitTypeMkPtrTyped(IRGenerator* self) {
   DbgString("mk_ptr_typed");
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
-
-  i->tag = InstrTagMkPtrTyped;
+  
+  VectorPush(&self->instruction_tags, InstrTagMkPtrTyped);
 }
 
 inline u64 VisitBlockNameDeclaration(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("named_block_decl '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagNamedBlockDecl);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagNamedBlockDecl;
-  i->value.named_block_decl.name = name;
-  i->value.named_block_decl.name_length = name_length;
-  i->value.named_block_decl.stmts_count = 0;
+  i->named_block_decl.name = name;
+  i->named_block_decl.name_length = name_length;
+  i->named_block_decl.stmts_count = 0;
 
-  return VectorLength(&self->instructions) - 1;
+  // index of this instruction
+  return (self->instruction_values.buffer_used_size / sizeof(InstructionValue)) - 1;
 }
 
 inline void VisitPassStmt(IRGenerator* self) {
   DbgString("pass_stmt");
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
-
-  i->tag = InstrTagPassStmt;
+  
+  VectorPush(&self->instruction_tags, InstrTagPassStmt);
 }
 
 inline void VisitQuitStmt(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("quit_stmt '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagQuitStmt);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagQuitStmt;
-  i->value.quit_stmt.name = name;
-  i->value.quit_stmt.name_length = name_length;
+  i->quit_stmt.name = name;
+  i->quit_stmt.name_length = name_length;
 }
 
 inline void VisitBinaryOperation(IRGenerator* self, u8 bin_op_tag) {
   Dbg("bin '%c'", bin_op_tag);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagBin);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagBin;
-  i->value.bin.op = bin_op_tag;
+  i->bin.op = bin_op_tag;
 }
 
 inline void VisitLoadName(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("load_name '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagLoadName);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagLoadName;
-  i->value.load_name.name = name;
-  i->value.load_name.name_length = name_length;
+  i->load_name.name = name;
+  i->load_name.name_length = name_length;
 }
 
 inline void VisitLoadDigit(IRGenerator* self, u64 value) {
   Dbg("load_digit '%llu'", value);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagLoadDigit);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagLoadDigit;
-  i->value.load_digit = value;
+  i->load_digit = value;
 }
 
 inline void VisitLoadField(IRGenerator* self, u8 const* name, u16 name_length) {
   Dbg("load_field '%.*s'", name_length, name);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagLoadField);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagLoadField;
-  i->value.load_field.name = name;
-  i->value.load_field.name_length = name_length;
+  i->load_field.name = name;
+  i->load_field.name_length = name_length;
 }
 
 inline void VisitCall(IRGenerator* self, u8 const* name, u16 name_length, u16 args_count) {
   Dbg("call '%.*s' args:%hu", name_length, name, args_count);
-  Instruction* i;
-  unwrap(AllocateSingle(&self->instructions.allocator, &i));
+  
+  InstructionValue* i;
+  VectorPush(&self->instruction_tags, InstrTagCall);
+  unwrap(AllocateSingle(&self->instruction_values, &i));
 
-  i->tag = InstrTagCall;
-  i->value.call.name = name;
-  i->value.call.name_length = name_length;
-  i->value.call.args_count = args_count;
+  i->call.name = name;
+  i->call.name_length = name_length;
+  i->call.args_count = args_count;
 }

@@ -9,7 +9,7 @@ void WriteIRToFile(IRGenerator const* self) {
 
   // writing the functions indexes
   {
-    // writing the indexes count
+    // writing the indexes used buffer size
     fwrite(
       (void const*)&self->functions.allocator.buffer_used_size,
       1,
@@ -26,11 +26,11 @@ void WriteIRToFile(IRGenerator const* self) {
     );
   }
 
-  // writing the instructions
+  // writing the instruction tags
   {
-    // writing the instructions count
+    // writing the instructions used buffer size
     fwrite(
-      (void const*)&self->instructions.allocator.buffer_used_size,
+      (void const*)&self->instruction_tags.allocator.buffer_used_size,
       1,
       sizeof(u64),
       output
@@ -38,9 +38,28 @@ void WriteIRToFile(IRGenerator const* self) {
 
     // writing the indexes
     fwrite(
-      (void const*)self->instructions.allocator.buffer_starting_pointer,
+      (void const*)self->instruction_tags.allocator.buffer_starting_pointer,
       1,
-      self->instructions.allocator.buffer_used_size,
+      self->instruction_tags.allocator.buffer_used_size,
+      output
+    );
+  }
+
+  // writing the instruction values
+  {
+    // writing the instructions used buffer size
+    fwrite(
+      (void const*)&self->instruction_values.buffer_used_size,
+      1,
+      sizeof(u64),
+      output
+    );
+
+    // writing the indexes
+    fwrite(
+      (void const*)self->instruction_values.buffer_starting_pointer,
+      1,
+      self->instruction_values.buffer_used_size,
       output
     );
   }

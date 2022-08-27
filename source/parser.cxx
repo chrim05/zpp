@@ -167,13 +167,13 @@ u16 ParseArgListDeclaration(ZppParser* self) {
 }
 
 void UpdateNumberOfArgsInFnInstr(ZppParser* self, u16 number_of_args, u64 instr_index) {
-  auto internal_buffer = GetInternalBuffer(&self->ast_visitor.instructions);
-  internal_buffer[instr_index].value.fn_decl.args_count = number_of_args;
+  auto internal_buffer = (InstructionValue*)(self->ast_visitor.instruction_values.buffer_starting_pointer);
+  internal_buffer[instr_index].fn_decl.args_count = number_of_args;
 }
 
 void UpdateNumberOfStmtsInNamedBlockInstr(ZppParser* self, u64 number_of_stmts, u64 instr_index) {
-  auto internal_buffer = GetInternalBuffer(&self->ast_visitor.instructions);
-  internal_buffer[instr_index].value.named_block_decl.stmts_count = number_of_stmts;
+  auto internal_buffer = (InstructionValue*)(self->ast_visitor.instruction_values.buffer_starting_pointer);
+  internal_buffer[instr_index].named_block_decl.stmts_count = number_of_stmts;
 }
 
 u16 ParseFnCall(ZppParser* self) {
