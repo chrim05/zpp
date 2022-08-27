@@ -1,8 +1,8 @@
 #include "compilation_manager.h"
 #include "irgenerator.h"
-#include "/pck/sys/include/dbg.h"
-#include "/pck/sys/include/collections.h"
-#include "/pck/sys/include/cstrings.h"
+#include "../pck/sys/include/dbg.h"
+#include "../pck/sys/include/collections.h"
+#include "../pck/sys/include/cstrings.h"
 
 error AstGen(ArgvTable const* self) {
   if (self->input_source == nullptr) {

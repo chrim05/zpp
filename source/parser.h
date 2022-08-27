@@ -1,6 +1,6 @@
 #pragma once
 #include "irgenerator.h"
-#include "/pck/sys/include/strings.h"
+#include "../pck/sys/include/strings.h"
 #include "token.h"
 
 struct ZppParser {

@@ -1,7 +1,7 @@
 #include "../include/mem.h"
 
-#include "/pck/sys/include/sys.h"
-#include "/pck/mimalloc/include/mimalloc.h"
+#include "../pck/sys/include/sys.h"
+#include "../pck/mimalloc/include/mimalloc.h"
 
 AllocationError MemRegionResize(MemRegion* self, u64 byte_size) {
   // ensuring that at least the required size is being allocated

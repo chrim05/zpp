@@ -1,8 +1,8 @@
 #pragma once
-#include "/pck/sys/include/fs.h"
-#include "/pck/sys/include/mem.h"
-#include "/pck/sys/include/strings.h"
-#include "/pck/sys/include/dbg.h"
+#include "../pck/sys/include/fs.h"
+#include "../pck/sys/include/mem.h"
+#include "../pck/sys/include/strings.h"
+#include "../pck/sys/include/dbg.h"
 #include "argv_parser.h"
 #include "parser.h"
 #include "info.h"

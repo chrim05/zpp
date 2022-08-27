@@ -1,5 +1,5 @@
-#include "/pck/sys/include/sys.h"
-#include "/pck/sys/include/dbg.h"
+#include "../pck/sys/include/sys.h"
+#include "../pck/sys/include/dbg.h"
 #include "argv_parser.h"
 #include "compilation_manager.h"
 #include <stdio.h>

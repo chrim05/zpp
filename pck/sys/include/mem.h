@@ -1,7 +1,7 @@
 #pragma once
 
-#include "/pck/sys/include/sys.h"
-#include "/pck/mimalloc/include/mimalloc.h"
+#include "sys.h"
+#include "../../mimalloc/include/mimalloc.h"
 
 constexpr error AllocErrTagOutOfMemory = Errn(1);
 

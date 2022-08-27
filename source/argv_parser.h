@@ -1,6 +1,6 @@
 #pragma once
-#include "/pck/sys/include/sys.h"
-#include "/pck/sys/include/cstrings.h"
+#include "../pck/sys/include/sys.h"
+#include "../pck/sys/include/cstrings.h"
 #include <stdio.h>
 
 constexpr u8 FlagChar = '+';

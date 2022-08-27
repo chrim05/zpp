@@ -1,5 +1,5 @@
 #pragma once
-#include "/pck/sys/include/sys.h"
+#include "../pck/sys/include/sys.h"
 
 // ! structure for handling the source code and its size
 struct CompilationInfo {

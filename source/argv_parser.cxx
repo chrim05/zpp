@@ -1,5 +1,5 @@
 #include "argv_parser.h"
-#include "/pck/sys/include/dbg.h"
+#include "../pck/sys/include/dbg.h"
 
 error GetTaskTagFromRepr(u8 const* task_repr, u8* task_tag_out) {
   if (CStringsAreEqual(task_repr, static_cstring("help")))
