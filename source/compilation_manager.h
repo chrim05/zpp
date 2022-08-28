@@ -27,9 +27,9 @@
   "Examples:\n"                                                                                            \
   "  + `zpp build +opt:2 main.zpp` --- generate optimized executable from source\n"
 
-// ! create a parser instance
-// ! and collects all global nodes into a buffer
-error AstGen(ArgvTable const* self);
+// ! generates ir for current compilation instance
+// ! and checks it
+error Build(ArgvTable const* self);
 
 // ! performs the specified task as the first parameter in the command line
 // ! for example `zpp help`, `zpp version` `zpp build +opt:1 main.zpp`
@@ -86,5 +86,11 @@ inline void ReportExpectedAnotherToken(Token const* found_token, u8 expected_tok
 inline void ReportMalformedDigit(SourceLocation const* location, u8 invalid_char) {
   PrintErrorFirstPart(location);
   printf("malformed digit contains: `%c`\n", invalid_char);
+  exit(1);
+}
+
+inline void ReportDoublyDeclared(SourceLocation const* location, u8 const* name, u16 name_length) {
+  PrintErrorFirstPart(location);
+  printf("doubly declared: `%.*s`\n", name_length, name);
   exit(1);
 }

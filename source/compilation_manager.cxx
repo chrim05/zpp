@@ -1,5 +1,6 @@
 #include "compilation_manager.h"
 #include "irgenerator.h"
+#include "checker.h"
 #include "../pck/sys/include/dbg.h"
 #include "../pck/sys/include/collections.h"
 #include "../pck/sys/include/cstrings.h"
@@ -26,7 +27,7 @@ void WriteIRToFile(IRGenerator const* self) {
     );
   }
 
-  // writing the instruction tags
+  // writing the instruction
   {
     // writing the instructions used buffer size
     fwrite(
@@ -36,30 +37,19 @@ void WriteIRToFile(IRGenerator const* self) {
       output
     );
 
-    // writing the indexes
+    // writing the tags
     fwrite(
       (void const*)self->instruction_tags.allocator.buffer_starting_pointer,
       1,
       self->instruction_tags.allocator.buffer_used_size,
       output
     );
-  }
 
-  // writing the instruction values
-  {
-    // writing the instructions used buffer size
+    // writing the values
     fwrite(
-      (void const*)&self->instruction_values.buffer_used_size,
+      (void const*)self->instruction_values.allocator.buffer_starting_pointer,
       1,
-      sizeof(u64),
-      output
-    );
-
-    // writing the indexes
-    fwrite(
-      (void const*)self->instruction_values.buffer_starting_pointer,
-      1,
-      self->instruction_values.buffer_used_size,
+      self->instruction_values.allocator.buffer_used_size,
       output
     );
   }
@@ -67,7 +57,7 @@ void WriteIRToFile(IRGenerator const* self) {
   fclose(output);
 }
 
-error AstGen(ArgvTable const* self) {
+error Build(ArgvTable const* self) {
   if (self->input_source == nullptr) {
     printf("required 'input-file'\n");
     return Err;
@@ -119,8 +109,11 @@ error AstGen(ArgvTable const* self) {
   // parsing the file
   ParseGlobalScope(&parser);
 
+  // checking the file
+  CheckIR(&parser.ast_visitor);
+
   // writing ir to file
-  WriteIRToFile(&parser.ast_visitor);
+  // WriteIRToFile(&parser.ast_visitor);
 
   return Ok;
 }
@@ -136,8 +129,8 @@ error CompilationTaskRun(ArgvTable const* self) {
       printf("Version: %.2f\n", Version);
       break;
     
-    case TaskTagAstGen:
-      try(AstGen(self), {});
+    case TaskTagBuild:
+      try(Build(self), {});
       break;
 
     default:

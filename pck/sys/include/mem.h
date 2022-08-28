@@ -29,12 +29,12 @@ error MemRegionResize(MemRegion* self, u64 byte_size);
 error AllocateBuffer(MemRegion* self, u8** buffer_output, u64 byte_size);
 
 template<typename BaseSliceElemT>
-  error AllocateSlice(MemRegion* self, BaseSliceElemT** buffer_output, u64 slice_length) {
+  inline error AllocateSlice(MemRegion* self, BaseSliceElemT** buffer_output, u64 slice_length) {
     return AllocateBuffer(self, (u8**)buffer_output, slice_length * sizeof(BaseSliceElemT));
 }
 
 template<typename SingleT>
-  error AllocateSingle(MemRegion* self, SingleT** single_output) {
+  inline error AllocateSingle(MemRegion* self, SingleT** single_output) {
     return AllocateBuffer(self, (u8**)single_output, sizeof(SingleT));
 }
 

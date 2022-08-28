@@ -7,7 +7,7 @@ error GetTaskTagFromRepr(u8 const* task_repr, u8* task_tag_out) {
   else if (CStringsAreEqual(task_repr, static_cstring("version")))
     *task_tag_out = TaskTagVersion;
   else if (CStringsAreEqual(task_repr, static_cstring("astgen")))
-    *task_tag_out = TaskTagAstGen;
+    *task_tag_out = TaskTagBuild;
   else
     // unknown task
     return Err;

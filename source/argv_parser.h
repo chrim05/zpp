@@ -7,7 +7,7 @@ constexpr u8 FlagChar = '+';
 
 constexpr u8 TaskTagHelp = 0;
 constexpr u8 TaskTagVersion = 1;
-constexpr u8 TaskTagAstGen = 2;
+constexpr u8 TaskTagBuild = 2;
 
 // ! handles a parsed version of `argv`
 struct ArgvTable {
