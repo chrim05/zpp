@@ -119,13 +119,13 @@ void ParseNamedType(ZppParser* self) {
   if (self->current.length == 2 and SmallFixedCStringsAreEqual(
     value, static_cstring("u8"), length
   ))
-    VisitTypeMkTypedBuiltin(&self->ast_visitor, BuiltinTypeTagU8, self->current.location);
+    VisitTypeLoadBuiltinType(&self->ast_visitor, BuiltinTypeTagU8, self->current.location);
   else if (self->current.length == 3 and SmallFixedCStringsAreEqual(
     value, static_cstring("u32"), length
   ))
-    VisitTypeMkTypedBuiltin(&self->ast_visitor, BuiltinTypeTagU32, self->current.location);
+    VisitTypeLoadBuiltinType(&self->ast_visitor, BuiltinTypeTagU32, self->current.location);
   else
-    VisitTypeMkTyped(&self->ast_visitor, value, length, self->current.location);
+    VisitTypeLoadType(&self->ast_visitor, value, length, self->current.location);
 }
 
 void ParseType(ZppParser* self) {
@@ -141,7 +141,7 @@ void ParseType(ZppParser* self) {
       location = self->current.location;
 
       ParseType(self);
-      VisitTypeMkPtrTyped(&self->ast_visitor, location);
+      VisitTypeLoadPtrType(&self->ast_visitor, location);
       break;
 
     default:
@@ -164,13 +164,16 @@ u16 ParseArgListDeclaration(ZppParser* self) {
   while (true) {
     number_of_args++;
     // parsing the name
-    ExpectToken(&self->current, TokenTagIdentifier);   
+    ExpectToken(&self->current, TokenTagIdentifier);
 
-    VisitArgDeclaration(&self->ast_visitor, GetTokenValue(&self->current), self->current.length, self->current.location);
+    auto name = GetTokenValue(&self->current);
+    auto name_length = self->current.length;
 
     // parsing type notation
     CollectNextTokenAndExpect(self, TokenTagSymColon);
     ParseType(self);
+
+    VisitArgDeclaration(&self->ast_visitor, name, name_length, self->current.location);
 
     // checking for another arg
     CollectNextToken(self);
@@ -379,9 +382,9 @@ void ParseNamedBlock(ZppParser* self) {
 
   CollectNextTokenAndExpect(self, TokenTagSymColon);
   
-  auto instr_index = VisitBlockNameDeclaration(&self->ast_visitor, name, name_length, name_location);
   // parsing 'T3'
   ParseType(self);
+  auto instr_index = VisitBlockNameDeclaration(&self->ast_visitor, name, name_length, name_location);
 
   // parsing '{}'
   auto stmts_count = ParseBlockContent(self);

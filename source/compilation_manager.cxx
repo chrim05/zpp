@@ -104,7 +104,7 @@ error Build(ArgvTable const* self) {
   // creating the parser instance
   ZppParser parser;
   InitZppParser(&parser, &chunk, &compilation_info);
-  InitIRGenerator(&parser.ast_visitor);
+  InitIRGenerator(&parser.ast_visitor, parser.allocator);
 
   // parsing the file
   ParseGlobalScope(&parser);

@@ -32,6 +32,22 @@ template<typename T>
 }
 
 template<typename T>
-  inline T* GetInternalBuffer(Vector<T>* self) {
+  void VectorClear(Vector<T>* self) {
+    self->allocator.buffer_used_size = 0;
+}
+
+template<typename T>
+  inline T* GetInternalBuffer(Vector<T> const* self) {
     return (T*)self->allocator.buffer_starting_pointer;
+}
+
+template<typename T>
+  T* VectorPopRef(Vector<T>* self) {
+    self->allocator.buffer_used_size -= sizeof(T);
+    return &GetInternalBuffer(self)[self->allocator.buffer_used_size];
+}
+
+template<typename T>
+  T* VectorLastRef(Vector<T> const* self) {
+    return &GetInternalBuffer(self)[self->allocator.buffer_used_size - sizeof(T)];
 }

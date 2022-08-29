@@ -94,3 +94,21 @@ inline void ReportDoublyDeclared(SourceLocation const* location, u8 const* name,
   printf("doubly declared: `%.*s`\n", name_length, name);
   exit(1);
 }
+
+inline void ReportNotDeclared(SourceLocation const* location, u8 const* name, u16 name_length) {
+  PrintErrorFirstPart(location);
+  printf("not declared: `%.*s`\n", name_length, name);
+  exit(1);
+}
+
+inline void ReportBinNotNumbers(SourceLocation const* location) {
+  PrintErrorFirstPart(location);
+  printf("binary operation with non-numbers terms\n");
+  exit(1);
+}
+
+inline void ReportBinIncompatible(SourceLocation const* location) {
+  PrintErrorFirstPart(location);
+  printf("binary operation has incompatible terms types\n");
+  exit(1);
+}

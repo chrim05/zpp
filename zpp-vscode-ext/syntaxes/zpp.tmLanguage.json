@@ -537,7 +537,7 @@
 				{
 					"comment": "class keyword",
 					"name": "keyword.declaration.struct.zpp storage.type.zpp",
-					"match": "\\b(class)\\b"
+					"match": "\\b(struct|union)\\b"
 				},
 				{
 					"comment": "storage modifiers",
@@ -784,7 +784,7 @@
 				},
 				{
 					"comment": "class declarations",
-					"match": "\\b(class|union)\\s+([A-Z][A-Za-z0-9]*)\\b",
+					"match": "\\b(struct|union)\\s+([A-Z][A-Za-z0-9]*)\\b",
 					"captures": {
 						"1": {
 							"name": "keyword.declaration.struct.zpp storage.type.zpp"

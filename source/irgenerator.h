@@ -12,8 +12,8 @@
 
 constexpr u8 InstrTagDeclFn = 0;
 constexpr u8 InstrTagArgDecl = 1;
-constexpr u8 InstrTagMkTyped = 2;
-constexpr u8 InstrTagMkPtrTyped = 3;
+constexpr u8 InstrTagLoadType = 2;
+constexpr u8 InstrTagLoadPtrType = 3;
 constexpr u8 InstrTagNamedBlockDecl = 4;
 constexpr u8 InstrTagPassStmt = 5;
 constexpr u8 InstrTagBin = 6;
@@ -22,6 +22,7 @@ constexpr u8 InstrTagQuitStmt = 8;
 constexpr u8 InstrTagLoadDigit = 9;
 constexpr u8 InstrTagLoadField = 10;
 constexpr u8 InstrTagCall = 11;
+constexpr u8 InstrTagLoadBuiltinType = 12;
 
 constexpr u8 BuiltinTypeTagU8 = 0;
 constexpr u8 BuiltinTypeTagU16 = 1;
@@ -31,6 +32,10 @@ constexpr u8 BuiltinTypeTagI8 = 4;
 constexpr u8 BuiltinTypeTagI16 = 5;
 constexpr u8 BuiltinTypeTagI32 = 6;
 constexpr u8 BuiltinTypeTagI64 = 7;
+constexpr u8 BuiltinTypeTagLiteralInt = 8;
+
+constexpr u8 TypeTagBuiltin = 0;
+constexpr u8 TypeTagPtr = 1;
 
 union InstructionValue {
   struct {
@@ -47,7 +52,7 @@ union InstructionValue {
   struct {
     u8 const* name;
     u16 name_length;
-  } mk_typed;
+  } load_type;
 
   struct {
     u8 const* name;
@@ -82,9 +87,24 @@ union InstructionValue {
   
   struct {
     u8 type_code;
-  } mk_typed_builtin;
+  } load_builtin_type;
 
   u64 load_digit;
+};
+
+struct Type;
+
+union TypeValue {
+  struct {
+    Type* pointee_type;
+  } ptr;
+
+  u8 builtin_type_code;
+};
+
+struct Type {
+  u8 tag;
+  TypeValue value;
 };
 
 struct IRGenerator {
@@ -92,25 +112,32 @@ struct IRGenerator {
   Vector<u8> instruction_tags;
   Vector<InstructionValue> instruction_values;
   Vector<u64> functions;
+
+  Vector<u64> local_indexes;
+  Vector<u8> local_type_tags;
+  Vector<TypeValue> local_type_values;
+
+  Type current_type;
+  MemRegion* allocator;
+
+  Vector<u8> stack_type_tags;
+  Vector<TypeValue> stack_type_values;
 };
 
-inline void InitIRGenerator(IRGenerator* self) {
-  catch(InitVector(&self->instruction_locations, 1'000'000), {
-    DbgString("Failed to allocate IRGenerator instruction locations");
-  });
+inline void InitIRGenerator(IRGenerator* self, MemRegion* allocator) {
+  unwrap(InitVector(&self->instruction_locations, 1'000'000));
+  unwrap(InitVector(&self->instruction_tags, 1'000'000));
+  unwrap(InitVector(&self->instruction_values, 1'000'000));
+  unwrap(InitVector(&self->functions, 10'000));
 
-  catch(InitVector(&self->instruction_tags, 1'000'000), {
-    DbgString("Failed to allocate IRGenerator instruction tags");
-  });
+  unwrap(InitVector(&self->local_indexes, 500));
+  unwrap(InitVector(&self->local_type_tags, 500));
+  unwrap(InitVector(&self->local_type_values, 500));
 
-  catch(InitVector(&self->instruction_values, 1'000'000), {
-    DbgString("Failed to allocate IRGenerator instruction values");
-  });
+  self->allocator = allocator;
 
-  catch(InitVector(&self->functions, 10'000), {
-    DbgString("Failed to allocate IRGenerator functions");
-  });
-  // InitVector(&self->types, 100);
+  unwrap(InitVector(&self->stack_type_tags, 16));
+  unwrap(InitVector(&self->stack_type_values, 16));
 }
 
 inline u64 VisitFnDeclaration(
@@ -147,38 +174,38 @@ inline void VisitArgDeclaration(IRGenerator* self, u8 const* name, u16 name_leng
   i->arg_decl.name_length = name_length;
 }
 
-inline void VisitTypeMkTyped(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation location) {
-  Dbg("mk_typed '%.*s'", name_length, name);
+inline void VisitTypeLoadType(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation location) {
+  Dbg("load_type '%.*s'", name_length, name);
   
   InstructionValue* i;
   VectorPush(&self->instruction_locations, location);
   VectorPush(&self->instruction_locations, location);
-  VectorPush(&self->instruction_tags, InstrTagMkTyped);
+  VectorPush(&self->instruction_tags, InstrTagLoadType);
   unwrap(AllocateSingle(&self->instruction_values.allocator, &i));
 
-  i->mk_typed.name = name;
-  i->mk_typed.name_length = name_length;
+  i->load_type.name = name;
+  i->load_type.name_length = name_length;
 }
 
-inline void VisitTypeMkTypedBuiltin(IRGenerator* self, u8 type_code, SourceLocation location) {
-  Dbg("mk_typed_builtin '%u'", type_code);
+inline void VisitTypeLoadBuiltinType(IRGenerator* self, u8 type_code, SourceLocation location) {
+  Dbg("load_builtin_type '%u'", type_code);
   
   InstructionValue* i;
   VectorPush(&self->instruction_locations, location);
-  VectorPush(&self->instruction_tags, InstrTagMkTyped);
+  VectorPush(&self->instruction_tags, InstrTagLoadBuiltinType);
   unwrap(AllocateSingle(&self->instruction_values.allocator, &i));
 
-  i->mk_typed_builtin.type_code = type_code;
+  i->load_builtin_type.type_code = type_code;
 }
 
-inline void VisitTypeMkPtrTyped(IRGenerator* self, SourceLocation location) {
+inline void VisitTypeLoadPtrType(IRGenerator* self, SourceLocation location) {
   DbgString("mk_ptr_typed");
   
   InstructionValue* i;
   unwrap(AllocateSingle(&self->instruction_values.allocator, &i));
 
   VectorPush(&self->instruction_locations, location);
-  VectorPush(&self->instruction_tags, InstrTagMkPtrTyped);
+  VectorPush(&self->instruction_tags, InstrTagLoadPtrType);
 }
 
 inline u64 VisitBlockNameDeclaration(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation location) {
