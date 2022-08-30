@@ -37,11 +37,14 @@ constexpr u8 BuiltinTypeTagLiteralInt = 8;
 constexpr u8 TypeTagBuiltin = 0;
 constexpr u8 TypeTagPtr = 1;
 
+struct FnDeclCheckerInfo;
+
 union InstructionValue {
   struct {
     u8 const* name;
     u16 name_length;
     u16 args_count;
+    FnDeclCheckerInfo* checker_info;
   } fn_decl;
 
   struct {
@@ -105,6 +108,17 @@ union TypeValue {
 struct Type {
   u8 tag;
   TypeValue value;
+};
+
+struct FnDeclCheckerInfo {
+  // the length of this buffer array is ../args_count
+  u8* arg_type_tags;
+  TypeValue* arg_type_values;
+  u64* arg_indexes;
+
+  Type ret_type;
+
+  u64 first_stmt_index;
 };
 
 struct IRGenerator {

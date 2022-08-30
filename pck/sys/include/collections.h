@@ -44,10 +44,10 @@ template<typename T>
 template<typename T>
   T* VectorPopRef(Vector<T>* self) {
     self->allocator.buffer_used_size -= sizeof(T);
-    return &GetInternalBuffer(self)[self->allocator.buffer_used_size];
+    return &GetInternalBuffer(self)[self->allocator.buffer_used_size / sizeof(T)];
 }
 
 template<typename T>
   T* VectorLastRef(Vector<T> const* self) {
-    return &GetInternalBuffer(self)[self->allocator.buffer_used_size - sizeof(T)];
+    return &GetInternalBuffer(self)[(self->allocator.buffer_used_size - sizeof(T)) / sizeof(T)];
 }

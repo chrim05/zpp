@@ -1,15 +1,12 @@
 #include "checker.h"
 #include "compilation_manager.h"
 
-void CheckFnDoublyDeclared(
-  IRGenerator const* self,
-  InstructionValue* instruction_values,
-  SourceLocation* instruction_locations,
-  u64 fn_to_check_index
-) {
+void CheckFnDoublyDeclared(IRGenerator const* self, u64 fn_to_check_index) {
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
+  auto instruction_locations = GetInternalBuffer(&self->instruction_locations);
   auto functions = GetInternalBuffer(&self->functions);
   auto functions_length = VectorLength(&self->functions);
-  auto fn_to_check = instruction_values[fn_to_check_index].fn_decl;
+  auto fn_to_check = &instruction_values[fn_to_check_index].fn_decl;
 
   for (u64 i = 0; i < functions_length; i++) {
     auto fn_index = functions[i];
@@ -17,13 +14,10 @@ void CheckFnDoublyDeclared(
     if (fn_index >= fn_to_check_index)
       return;
 
-    auto fn = instruction_values[fn_index].fn_decl;
-    auto name = fn.name;
-    auto name_length = fn.name_length;
+    auto fn = &instruction_values[fn_index].fn_decl;
 
-    if (name_length == fn_to_check.name_length and SmallFixedCStringsAreEqual(name, fn_to_check.name, name_length)) {
-      ReportDoublyDeclared(&instruction_locations[fn_to_check_index], name, name_length);
-    }
+    if (fn->name_length == fn_to_check->name_length and SmallFixedCStringsAreEqual(fn->name, fn_to_check->name, fn->name_length))
+      ReportDoublyDeclared(&instruction_locations[fn_to_check_index], fn->name, fn->name_length);
   }
 }
 
@@ -35,24 +29,30 @@ void ProcessLoadPtrType(IRGenerator* self) {
   self->current_type.tag = TypeTagPtr;
 }
 
-void Declare(IRGenerator* self, u64 i) {
-  VectorPush(&self->local_indexes, i);
-  VectorPush(&self->local_type_tags, self->current_type.tag);
-  VectorPush(&self->local_type_values, self->current_type.value);
+void ProcessLoadBuiltinType(IRGenerator* self, u8 type_code) {
+  self->current_type.tag = TypeTagBuiltin;
+  self->current_type.value.builtin_type_code = type_code;
+}
+
+void Declare(IRGenerator* self, u64 instr_index, u8 type_tag, TypeValue type_value) {
+  VectorPush(&self->local_indexes, instr_index);
+  VectorPush(&self->local_type_tags, type_tag);
+  VectorPush(&self->local_type_values, type_value);
 }
 
 void SearchDeclared(
   IRGenerator* self, u8* type_tag_out, TypeValue* type_value_out,
-  u8 const* name, u16 name_length, SourceLocation* location
+  u8 const* name, u16 name_length, SourceLocation const* location
 ) {
-  auto const instruction_tags = GetInternalBuffer(&self->instruction_tags);
-  auto const instruction_values = GetInternalBuffer(&self->instruction_values);
+  auto instruction_tags = GetInternalBuffer(&self->instruction_tags);
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
 
-  auto const local_indexes = GetInternalBuffer(&self->local_indexes);
-  auto const local_type_tags = GetInternalBuffer(&self->local_type_tags);
-  auto const local_type_values = GetInternalBuffer(&self->local_type_values);
+  auto local_indexes = GetInternalBuffer(&self->local_indexes);
+  auto local_indexes_length = VectorLength(&self->local_indexes);
+  auto local_type_tags = GetInternalBuffer(&self->local_type_tags);
+  auto local_type_values = GetInternalBuffer(&self->local_type_values);
 
-  for (u64 i = 0; i < VectorLength(&self->local_indexes); i++) {
+  for (u64 i = 0; i < local_indexes_length; i++) {
     auto index = local_indexes[i];
     auto type_tag = local_type_tags[i];
     auto type_value = local_type_values[i];
@@ -62,9 +62,9 @@ void SearchDeclared(
     if (it != InstrTagArgDecl)
       continue;
     
-    auto iv = instruction_values[index];
+    auto iv = &instruction_values[index];
 
-    if (iv.load_name.name_length != name_length or !SmallFixedCStringsAreEqual(iv.load_name.name, name, name_length))
+    if (iv->load_name.name_length != name_length or !SmallFixedCStringsAreEqual(iv->load_name.name, name, name_length))
       continue;
     
     *type_tag_out = type_tag;
@@ -75,7 +75,7 @@ void SearchDeclared(
   ReportNotDeclared(location, name, name_length);
 }
 
-void ProcessLoadName(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation* location) {
+void ProcessLoadName(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation const* location) {
   u8* head_tag;
   unwrap(AllocateSingle(&self->stack_type_tags.allocator, &head_tag));
 
@@ -96,14 +96,29 @@ void ProcessLoadDigit(IRGenerator* self) {
   head_value->builtin_type_code = BuiltinTypeTagLiteralInt;
 }
 
-u8 BuiltinTypesAreEqual(TypeValue* lvalue_ref, TypeValue* rvalue_ref) {
-  if ((lvalue_ref->builtin_type_code == BuiltinTypeTagLiteralInt) | (lvalue_ref->builtin_type_code == BuiltinTypeTagLiteralInt))
+void LoadFunctionReturnType(IRGenerator* self, Type ret_type) {
+  u8* head_tag;
+  unwrap(AllocateSingle(&self->stack_type_tags.allocator, &head_tag));
+
+  TypeValue* head_value;
+  unwrap(AllocateSingle(&self->stack_type_values.allocator, &head_value));
+
+  *head_tag = ret_type.tag;
+  *head_value = ret_type.value;
+}
+
+u8 BuiltinTypesAreCompatible(TypeValue const* lvalue_ref, TypeValue const* rvalue_ref) {
+  if ((lvalue_ref->builtin_type_code == BuiltinTypeTagLiteralInt) | (rvalue_ref->builtin_type_code == BuiltinTypeTagLiteralInt))
     return true;
   
   return lvalue_ref->builtin_type_code == rvalue_ref->builtin_type_code;
 }
 
-void ProcessBin(IRGenerator* self, SourceLocation* location) {
+u8 TypeIsLiteralInt(u8 tag, TypeValue const* value_ref) {
+  return tag == TypeTagBuiltin and value_ref->builtin_type_code == BuiltinTypeTagLiteralInt;
+}
+
+void ProcessBin(IRGenerator* self, SourceLocation const* location) {
   auto rtag_ref = VectorPopRef(&self->stack_type_tags);
   auto rvalue_ref = VectorPopRef(&self->stack_type_values);
   auto ltag_ref = VectorLastRef(&self->stack_type_tags);
@@ -112,58 +127,234 @@ void ProcessBin(IRGenerator* self, SourceLocation* location) {
   // when terms are not numbers
   if (*rtag_ref != TypeTagBuiltin or *ltag_ref != TypeTagBuiltin)
     ReportBinNotNumbers(location);
-  
-  if (BuiltinTypesAreEqual(lvalue_ref, rvalue_ref))
+  // otherwise checking that those numbers types are equal
+  else if (!BuiltinTypesAreCompatible(lvalue_ref, rvalue_ref))
     ReportBinIncompatible(location);
+  
+  // when the left term (which is not actually popped)
+  // is a literal int type, we try to replace it with the
+  // right int type which could be a concrete one
+  if (TypeIsLiteralInt(*ltag_ref, lvalue_ref))
+    lvalue_ref->builtin_type_code = rvalue_ref->builtin_type_code;
 }
 
-void CheckIR(IRGenerator* self) {
+void SearchFunction(
+  IRGenerator* self, InstructionValue const** iv_out,
+  u8 const* name, u16 name_length, SourceLocation const* location
+) {
+  auto functions_length = VectorLength(&self->functions);
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
+  auto function_indexes = GetInternalBuffer(&self->functions);
+
+  for (u64 i = 0; i < functions_length; i++) {
+    auto index = function_indexes[i];
+    *iv_out = &instruction_values[index];
+
+    if ((*iv_out)->fn_decl.name_length != name_length or !SmallFixedCStringsAreEqual((*iv_out)->fn_decl.name, name, name_length))
+      continue;
+    
+    return;
+  }
+
+  ReportNotDeclared(location, name, name_length);
+  Unreachable;
+}
+
+u8 PtrTypesAreCompatible(TypeValue* expected_value, TypeValue* found_value) {
+  return TypesAreCompatible(
+    expected_value->ptr.pointee_type->tag,
+    &expected_value->ptr.pointee_type->value,
+
+    found_value->ptr.pointee_type->tag,
+    &found_value->ptr.pointee_type->value
+  );
+}
+
+u8 TypesAreCompatible(u8 expected_tag, TypeValue* expected_value, u8 found_tag, TypeValue* found_value) {
+  if (expected_tag != found_tag)
+    return false;
+  
+  switch (expected_tag) {
+    case TypeTagBuiltin: return BuiltinTypesAreCompatible(expected_value, found_value);
+    case TypeTagPtr: return PtrTypesAreCompatible(expected_value, expected_value);
+    default: Unreachable;
+  }
+}
+
+void CheckTypesMismatch(SourceLocation const* location, u8 expected_tag, TypeValue* expected_value, u8 found_tag, TypeValue* found_value) {
+  if (!TypesAreCompatible(expected_tag, expected_value, found_tag, found_value))
+    ReportTypesMismatch(location);
+}
+
+void ProcessCall(IRGenerator* self, InstructionValue const* value, SourceLocation const* location) {
+  InstructionValue const* fn_instr;
+  SearchFunction(self, &fn_instr, value->call.name, value->call.name_length, location);
+
+  // checking that the args count match between decl and call
+  if (value->call.args_count != fn_instr->fn_decl.args_count)
+    ReportWrongNumberOfArgs(location);
+  
+  // checking that arg types match
+  for (u16 i = 0; i < fn_instr->fn_decl.args_count; i++) {
+    auto expected_tag = *VectorPopRef(&self->stack_type_tags);
+    auto expected_value = VectorPopRef(&self->stack_type_values);
+    auto found_tag = fn_instr->fn_decl.checker_info->arg_type_tags[i];
+    auto found_value = &fn_instr->fn_decl.checker_info->arg_type_values[i];
+
+    // expecting the types match
+    CheckTypesMismatch(location, expected_tag, expected_value, found_tag, found_value);
+  }
+  
+  // loading on the stack the return type
+  LoadFunctionReturnType(self, fn_instr->fn_decl.checker_info->ret_type);
+}
+
+void CreateFunctionPrototype(IRGenerator* self, u64 fn_instr_index, InstructionValue* fn_value) {
+  auto instruction_tags = GetInternalBuffer(&self->instruction_tags);
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
+  
+  // skipping the fn_decl instr
+  fn_instr_index++;
+
+  unwrap(AllocateSingle(self->allocator, &fn_value->fn_decl.checker_info));
+  unwrap(AllocateSlice(self->allocator, &fn_value->fn_decl.checker_info->arg_indexes, fn_value->fn_decl.args_count));
+  unwrap(AllocateSlice(self->allocator, &fn_value->fn_decl.checker_info->arg_type_tags, fn_value->fn_decl.args_count));
+  unwrap(AllocateSlice(self->allocator, &fn_value->fn_decl.checker_info->arg_type_values, fn_value->fn_decl.args_count));
+
+  // prototyping args
+  u32 i = 0;
+  for (u16 args_counter = 0; args_counter < fn_value->fn_decl.args_count; i++) {
+    auto index = fn_instr_index + i;
+    auto tag = instruction_tags[index];
+    auto value = &instruction_values[index];
+
+    if (tag == InstrTagArgDecl) {
+      fn_value->fn_decl.checker_info->arg_type_tags[args_counter] = self->current_type.tag;
+      fn_value->fn_decl.checker_info->arg_type_values[args_counter] = self->current_type.value;
+      fn_value->fn_decl.checker_info->arg_indexes[args_counter] = index;
+
+      args_counter++;
+      continue;
+    }
+
+    switch (tag) {
+      case InstrTagLoadBuiltinType: ProcessLoadBuiltinType(self, value->load_builtin_type.type_code); break;
+      case InstrTagLoadPtrType: ProcessLoadPtrType(self); break;
+      default: Unreachable;
+    }
+  }
+
+  // skipping the arg_decl instr
+  i++;
+
+  // prototyping ret type
+  for (; true; i++) {
+    auto index = fn_instr_index + i;
+    auto tag = instruction_tags[index];
+    auto value = &instruction_values[index];
+
+    if (tag == InstrTagNamedBlockDecl) {
+      fn_value->fn_decl.checker_info->ret_type = self->current_type;
+      break;
+    }
+
+    switch (tag) {
+      case InstrTagLoadBuiltinType: ProcessLoadBuiltinType(self, value->load_builtin_type.type_code); break;
+      case InstrTagLoadPtrType: ProcessLoadPtrType(self); break;
+      default: Unreachable;
+    }
+  }
+
+  // setting the first statement index (+ 1 because we need to skip the named_block_decl instr)
+  fn_value->fn_decl.checker_info->first_stmt_index = fn_instr_index + i + 1;
+}
+
+void CreateFunctionPrototypes(IRGenerator* self) {
+  auto functions = GetInternalBuffer(&self->functions);
+  auto functions_length = VectorLength(&self->functions);
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
+
+  for (u64 i = 0; i < functions_length; i++) {
+    auto fn_instr_index = functions[i];
+    auto value = &instruction_values[fn_instr_index];
+
+    CheckFnDoublyDeclared(self, fn_instr_index);
+    CreateFunctionPrototype(self, fn_instr_index, value);
+  }
+}
+
+void CheckFunction(IRGenerator* self, u64 i) {
   auto instruction_tags = GetInternalBuffer(&self->instruction_tags);
   auto instruction_values = GetInternalBuffer(&self->instruction_values);
   auto instruction_locations = GetInternalBuffer(&self->instruction_locations);
-
-  for (u64 i = 0; i < VectorLength(&self->instruction_tags); i++) {
+  auto stmts_count = instruction_values[i - 1].named_block_decl.stmts_count;
+  
+  // checking statements
+  for (u32 j = 0; j < stmts_count; j++, i++) {
     auto tag = instruction_tags[i];
-    auto value = instruction_values[i];
+    auto value = &instruction_values[i];
     auto location = &instruction_locations[i];
 
     switch (tag) {
-      case InstrTagDeclFn:
-        VectorClear(&self->local_indexes);
-        VectorClear(&self->local_type_tags);
-        VectorClear(&self->local_type_tags);
-        CheckFnDoublyDeclared(self, instruction_values, instruction_locations, i);
-        break;
-      
-      case InstrTagNamedBlockDecl:
-      case InstrTagArgDecl:
-        Declare(self, i);
-        break;
-      
-      case InstrTagLoadBuiltinType:
-        self->current_type.tag = TypeTagBuiltin;
-        self->current_type.value.builtin_type_code = value.load_builtin_type.type_code;
-        break;
-      
-      case InstrTagLoadPtrType:
-        ProcessLoadPtrType(self);
-        break;
-      
-      case InstrTagLoadName:
-        ProcessLoadName(self, value.load_name.name, value.load_name.name_length, location);
-        break;
-      
-      case InstrTagLoadDigit:
-        ProcessLoadDigit(self);
-        break;
-      
-      case InstrTagBin:
-        ProcessBin(self, location);
-        break;
+      case InstrTagLoadName: ProcessLoadName(self, value->load_name.name, value->load_name.name_length, location); break;
+      case InstrTagLoadDigit: ProcessLoadDigit(self); break;
+      case InstrTagBin: ProcessBin(self, location); break;
 
       default:
         Dbg("unbound instr tag %u", tag);
-        Todo;
+        Unreachable;
     }
   }
+}
+
+void DeclareFunctionPrototype(IRGenerator* self, InstructionValue* fn_value) {
+  // declaring args
+  for (u16 i = 0; i < fn_value->fn_decl.args_count; i++)
+    Declare(
+      self,
+      fn_value->fn_decl.checker_info->arg_indexes[i],
+      fn_value->fn_decl.checker_info->arg_type_tags[i],
+      fn_value->fn_decl.checker_info->arg_type_values[i]
+    );
+  
+  // declaring ret type name
+  auto named_block_instr_index = fn_value->fn_decl.checker_info->first_stmt_index - 1;
+  Declare(
+    self,
+    named_block_instr_index,
+    fn_value->fn_decl.checker_info->ret_type.tag,
+    fn_value->fn_decl.checker_info->ret_type.value
+  );
+}
+
+void ClearLocals(IRGenerator* self) {
+  VectorClear(&self->local_indexes);
+  VectorClear(&self->local_type_tags);
+  VectorClear(&self->local_type_values);
+}
+
+void CheckFunctions(IRGenerator* self) {
+  auto functions = GetInternalBuffer(&self->functions);
+  auto functions_length = VectorLength(&self->functions);
+  auto instruction_values = GetInternalBuffer(&self->instruction_values);
+
+  for (u64 i = 0; i < functions_length; i++) {
+    auto fn_instr_index = functions[i];
+    auto value = &instruction_values[fn_instr_index];
+
+    ClearLocals(self);
+    DeclareFunctionPrototype(self, value);
+    CheckFunction(self, value->fn_decl.checker_info->first_stmt_index);
+  }
+}
+
+void CheckIR(IRGenerator* self) {
+  // this takes a cycle O(n)
+  // where n is the number of functions
+  CreateFunctionPrototypes(self);
+
+  // O(n*k)
+  // where n is the number of functions
+  // where k is the number of instructions of that function
+  CheckFunctions(self);
 }

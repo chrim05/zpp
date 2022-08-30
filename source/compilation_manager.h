@@ -76,10 +76,12 @@ inline void ReportUnexpectedTokenInGlobalContext(Token const* token) {
 
 inline void ReportExpectedAnotherToken(Token const* found_token, u8 expected_token_tag) {
   PrintErrorFirstPart(&found_token->location);
+
   if (TokenTagIsSym(expected_token_tag))
     printf("expected token `%c`, found `%.*s`\n", expected_token_tag, found_token->length, GetTokenValue(found_token));
   else
     printf("expected token `%s`, found `%.*s`\n", TokenTagToString(expected_token_tag), found_token->length, GetTokenValue(found_token));
+
   exit(1);
 }
 
@@ -110,5 +112,17 @@ inline void ReportBinNotNumbers(SourceLocation const* location) {
 inline void ReportBinIncompatible(SourceLocation const* location) {
   PrintErrorFirstPart(location);
   printf("binary operation has incompatible terms types\n");
+  exit(1);
+}
+
+inline void ReportWrongNumberOfArgs(SourceLocation const* location) {
+  PrintErrorFirstPart(location);
+  printf("wrong number of args\n");
+  exit(1);
+}
+
+inline void ReportTypesMismatch(SourceLocation const* location) {
+  PrintErrorFirstPart(location);
+  printf("types mismatch\n");
   exit(1);
 }

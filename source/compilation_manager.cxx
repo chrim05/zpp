@@ -85,7 +85,7 @@ error Build(ArgvTable const* self) {
 
     file_size = GetFileSize(file);
 
-    InitMemRegion(&chunk, file_size);
+    unwrap(InitMemRegion(&chunk, file_size));
 
     // allocating space for the source code
     try(AllocateSlice<u8>(&chunk, &source_code_buffer, file_size + 1), {

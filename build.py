@@ -33,7 +33,6 @@ def try_mkdir(dir):
     pass
 
 if __name__ == '__main__':
-  error = False
   try_mkdir('bin')
 
   for file in listdir('source'):
@@ -43,9 +42,7 @@ if __name__ == '__main__':
       continue
 
     if file.endswith('.cxx'):
-      error += make_pass(f'bin/{file.removeprefix("source/").removesuffix(".cxx")}.o', f'{file} -c')
-  
-  if error:
-    exit(1)
+      if make_pass(f'bin/{file.removeprefix("source/").removesuffix(".cxx")}.o', f'{file} -c') != 0:
+        exit('compilation failed')
   
   exit(make_pass('bin/zpp', f'{LIBS} bin/*.o {LINK}'))

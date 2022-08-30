@@ -48,3 +48,8 @@ inline error InitMemRegion(MemRegion* mem_region_output, u64 initializer_byte_si
   
   return Ok;
 }
+
+inline error ReallocEntireMemRegion(MemRegion* self, u64 new_initializer_byte_size) {
+  self->~MemRegion();
+  return InitMemRegion(self, new_initializer_byte_size);
+}
