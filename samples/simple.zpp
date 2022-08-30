@@ -1,4 +1,4 @@
-fn Main(argc: u32, argv: **u8) e: u8 {
+fn Main(argc: u8, argv: **u8) e: u8 {
   quit e = Square(argc - 1);
 }
 

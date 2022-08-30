@@ -75,7 +75,7 @@ void SearchDeclared(
   ReportNotDeclared(location, name, name_length);
 }
 
-void ProcessLoadName(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation const* location) {
+void CheckLoadName(IRGenerator* self, u8 const* name, u16 name_length, SourceLocation const* location) {
   u8* head_tag;
   unwrap(AllocateSingle(&self->stack_type_tags.allocator, &head_tag));
 
@@ -85,7 +85,7 @@ void ProcessLoadName(IRGenerator* self, u8 const* name, u16 name_length, SourceL
   SearchDeclared(self, head_tag, head_value, name, name_length, location);
 }
 
-void ProcessLoadDigit(IRGenerator* self) {
+void CheckLoadDigit(IRGenerator* self) {
   u8* head_tag;
   unwrap(AllocateSingle(&self->stack_type_tags.allocator, &head_tag));
 
@@ -118,7 +118,7 @@ u8 TypeIsLiteralInt(u8 tag, TypeValue const* value_ref) {
   return tag == TypeTagBuiltin and value_ref->builtin_type_code == BuiltinTypeTagLiteralInt;
 }
 
-void ProcessBin(IRGenerator* self, SourceLocation const* location) {
+void CheckBin(IRGenerator* self, SourceLocation const* location) {
   auto rtag_ref = VectorPopRef(&self->stack_type_tags);
   auto rvalue_ref = VectorPopRef(&self->stack_type_values);
   auto ltag_ref = VectorLastRef(&self->stack_type_tags);
@@ -186,7 +186,7 @@ void CheckTypesMismatch(SourceLocation const* location, u8 expected_tag, TypeVal
     ReportTypesMismatch(location);
 }
 
-void ProcessCall(IRGenerator* self, InstructionValue const* value, SourceLocation const* location) {
+void CheckCall(IRGenerator* self, InstructionValue const* value, SourceLocation const* location) {
   InstructionValue const* fn_instr;
   SearchFunction(self, &fn_instr, value->call.name, value->call.name_length, location);
 
@@ -290,15 +290,21 @@ void CheckFunction(IRGenerator* self, u64 i) {
   auto stmts_count = instruction_values[i - 1].named_block_decl.stmts_count;
   
   // checking statements
-  for (u32 j = 0; j < stmts_count; j++, i++) {
+  for (u32 j = 0; j < stmts_count; i++) {
     auto tag = instruction_tags[i];
     auto value = &instruction_values[i];
     auto location = &instruction_locations[i];
 
     switch (tag) {
-      case InstrTagLoadName: ProcessLoadName(self, value->load_name.name, value->load_name.name_length, location); break;
-      case InstrTagLoadDigit: ProcessLoadDigit(self); break;
-      case InstrTagBin: ProcessBin(self, location); break;
+      // expressions
+      case InstrTagLoadName: CheckLoadName(self, value->load_name.name, value->load_name.name_length, location); break;
+      case InstrTagLoadDigit: CheckLoadDigit(self); break;
+      case InstrTagBin: CheckBin(self, location); break;
+      case InstrTagCall: CheckCall(self, value, location); break;
+
+      // statements
+      case InstrTagQuitStmt: j++; break;
+      case InstrTagPassStmt: j++; break;
 
       default:
         Dbg("unbound instr tag %u", tag);
