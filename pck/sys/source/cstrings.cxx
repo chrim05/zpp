@@ -23,40 +23,35 @@ u8 SmallFixedCStringsAreEqual(u8 const* left, u8 const* right, u32 length) {
   return true;
 }
 
+inline u8 ShortCStringsAreEqual(u8 const* left, u8 const* right, u32 length) {
+  while (length--)
+    if (left[length] != right[length])
+      return false;
+  
+  return true;
+}
+
+inline u8 LongCStringsAreEqual(u8 const* left, u8 const* right, u32 length) {
+  if (((u32 const*)left)[0] != ((u32 const*)right)[0])
+    return false;
+  
+  return ShortCStringsAreEqual(left + sizeof(u32), right + sizeof(u32), length - sizeof(u32));
+}
+
 u8 FixedCStringsAreEqual(u8 const* left, u8 const* right, u32 length) {
-  // ensuring the strings are at least of one character
-  // otherwise `offset` is potentially negative
-  Assert(length > 0);
+  u32 discard = length % sizeof(u64);
+  u32 blocks_length = length / sizeof(u64);
 
-  u32 fast = length / sizeof(u64) + 1;
-  u32 offset = (fast - 1) * sizeof(u64);
-  u32 current_block = 0;
+  for (u32 i = 0; i < blocks_length; i++)
+    if (((u64 const*)left)[i] != ((u64 const*)right)[i])
+      return false;
+  
+  u32 offset = blocks_length * sizeof(u64);
 
-  if(length <= sizeof(u64))
-    fast = 0;
-
-  auto lptr0 = (u64*)left;
-  auto lptr1 = (u64*)right;
-
-  while (current_block < fast) {
-    if (!(lptr0[current_block] ^ lptr1[current_block])) {
-      current_block++;
-      continue;
-    }
-
-    for (u32 pos = current_block * sizeof(u64); pos < length; pos++)
-      if ((left[pos] ^ right[pos]) || (left[pos] == 0) || (right[pos] == 0))
-        return left[pos] - right[pos];
-
-    current_block++;
-  }
-
-  while (length > offset) {
-    if (left[offset] ^ right[offset])
-      return left[offset] - right[offset];
-
-    offset++;
-  }
-	
-  return false;
+  if (discard < sizeof(u32))
+    return ShortCStringsAreEqual(left + offset, right + offset, discard);
+  else if (discard < sizeof(u64))
+    return LongCStringsAreEqual(left + offset, right + offset, discard);
+  else
+    return true;
 }

@@ -22,8 +22,8 @@ typedef double             f64;
 /*                                   Macros                                   */
 /* -------------------------------------------------------------------------- */
 
-#define try(what, and_then) ({ error __try__ = what; if (__try__ != Ok) { and_then; return __try__; } })
-#define catch(what, and_then) ({ if ((what) != Ok) { and_then; } })
+#define ctry(what, and_then) ({ error __try__ = what; if (__try__ != Ok) { and_then; return __try__; } })
+#define ccatch(what, and_then) ({ if ((what) != Ok) { and_then; } })
 #define static_cstring(s) ((u8 const*)s)
 #define Ok ((error)0)
 #define Err ((error)1)

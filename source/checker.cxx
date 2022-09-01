@@ -16,7 +16,7 @@ void CheckFnDoublyDeclared(IRGenerator const* self, u64 fn_to_check_index) {
 
     auto fn = &instruction_values[fn_index].fn_decl;
 
-    if (fn->name_length == fn_to_check->name_length and SmallFixedCStringsAreEqual(fn->name, fn_to_check->name, fn->name_length))
+    if (fn->name_length == fn_to_check->name_length and FixedCStringsAreEqual(fn->name, fn_to_check->name, fn->name_length))
       ReportDoublyDeclared(&instruction_locations[fn_to_check_index], fn->name, fn->name_length);
   }
 }
@@ -64,7 +64,7 @@ void SearchDeclared(
     
     auto iv = &instruction_values[index];
 
-    if (iv->load_name.name_length != name_length or !SmallFixedCStringsAreEqual(iv->load_name.name, name, name_length))
+    if (iv->load_name.name_length != name_length or !FixedCStringsAreEqual(iv->load_name.name, name, name_length))
       continue;
     
     *type_tag_out = type_tag;
@@ -150,7 +150,7 @@ void SearchFunction(
     auto index = function_indexes[i];
     *iv_out = &instruction_values[index];
 
-    if ((*iv_out)->fn_decl.name_length != name_length or !SmallFixedCStringsAreEqual((*iv_out)->fn_decl.name, name, name_length))
+    if ((*iv_out)->fn_decl.name_length != name_length or !FixedCStringsAreEqual((*iv_out)->fn_decl.name, name, name_length))
       continue;
     
     return;
@@ -179,6 +179,9 @@ u8 TypesAreCompatible(u8 expected_tag, TypeValue* expected_value, u8 found_tag, 
     case TypeTagPtr: return PtrTypesAreCompatible(expected_value, expected_value);
     default: Unreachable;
   }
+
+  // dead code
+  return 0;
 }
 
 void CheckTypesMismatch(SourceLocation const* location, u8 expected_tag, TypeValue* expected_value, u8 found_tag, TypeValue* found_value) {

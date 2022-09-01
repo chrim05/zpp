@@ -88,7 +88,7 @@ error Build(ArgvTable const* self) {
     unwrap(InitMemRegion(&chunk, file_size));
 
     // allocating space for the source code
-    try(AllocateSlice<u8>(&chunk, &source_code_buffer, file_size + 1), {
+    ctry(AllocateSlice<u8>(&chunk, &source_code_buffer, file_size + 1), {
       Dbg("Failed allocating slice of size '%llu' bytes for source code buffer, no enough memory", file_size);
     });
 
@@ -130,7 +130,7 @@ error CompilationTaskRun(ArgvTable const* self) {
       break;
     
     case TaskTagBuild:
-      try(Build(self), {});
+      ctry(Build(self), {});
       break;
 
     default:

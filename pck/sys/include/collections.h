@@ -25,7 +25,7 @@ template<typename T>
 template<typename T>
   error VectorPush(Vector<T>* self, T elem) {
     T* pointer_to_element;
-    try(AllocateSingle(&self->allocator, &pointer_to_element), {});
+    ctry(AllocateSingle(&self->allocator, &pointer_to_element), {});
 
     *pointer_to_element = elem;
     return Ok;

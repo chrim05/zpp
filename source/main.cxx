@@ -2,7 +2,7 @@
 #include "../pck/sys/include/dbg.h"
 #include "argv_parser.h"
 #include "compilation_manager.h"
-#include <stdio.h>
+#include "checker.h"
 
 // ! the only one `zpp.exe` entry point
 error Main(u32 argc, u8 const* const* argv) {
@@ -12,14 +12,14 @@ error Main(u32 argc, u8 const* const* argv) {
 
   // configurating the argv table based
   // on parsed argv
-  try(ArgvToTable(&argv_table, argc - 1, argv + 1), {});
+  ctry(ArgvToTable(&argv_table, argc - 1, argv + 1), {});
 
   // running the task
-  try(CompilationTaskRun(&argv_table), {});
+  ctry(CompilationTaskRun(&argv_table), {});
 
   return Ok;
 }
 
 int main(int argc, char** argv) {
-  return (char)Main(argc, (u8 const* const*)argv);
+  return (u8)Main(argc, (u8 const* const*)argv);
 }

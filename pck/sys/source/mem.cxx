@@ -21,7 +21,7 @@ error AllocateBuffer(MemRegion* self, u8** buffer_output, u64 byte_size) {
   // we reallocate it with double the size plus the required
   // allocation size (`byte_size`)
   if (self->buffer_used_size + byte_size > self->buffer_size)
-    try(MemRegionResize(self, byte_size), {});
+    ctry(MemRegionResize(self, byte_size), {});
 
   *buffer_output = self->buffer_starting_pointer + self->buffer_used_size;
   self->buffer_used_size += byte_size;

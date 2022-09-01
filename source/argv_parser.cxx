@@ -6,7 +6,7 @@ error GetTaskTagFromRepr(u8 const* task_repr, u8* task_tag_out) {
     *task_tag_out = TaskTagHelp;
   else if (CStringsAreEqual(task_repr, static_cstring("version")))
     *task_tag_out = TaskTagVersion;
-  else if (CStringsAreEqual(task_repr, static_cstring("astgen")))
+  else if (CStringsAreEqual(task_repr, static_cstring("build")))
     *task_tag_out = TaskTagBuild;
   else
     // unknown task
@@ -45,7 +45,7 @@ error ParseFlagAndUpdateArgvTable(ArgvTable* self, u8 const* flag) {
   }
 
   // finding the matching flag, ensuring their length are equal
-  if (flag_name_len == 3 && SmallFixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
+  if (flag_name_len == 3 && FixedCStringsAreEqual(flag, static_cstring("opt"), flag_name_len))
     Todo;
   else {
     printf("unknown flag '%.*s'\n", flag_name_len, flag);
@@ -61,7 +61,7 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
   
   // parsing the task and checking for its validity
   auto task = argv[0];
-  try(GetTaskTagFromRepr(task, &self->task_tag), {
+  ctry(GetTaskTagFromRepr(task, &self->task_tag), {
     printf("unknown task '%s'\n", task);
   });
 
@@ -72,9 +72,9 @@ error ArgvToTable(ArgvTable* self, u32 argc, u8 const* const* argv) {
 
     // checking whether arg is a flag or an input file
     if (arg[0] == FlagChar)
-      try(ParseFlagAndUpdateArgvTable(self, arg + 1), {});
+      ctry(ParseFlagAndUpdateArgvTable(self, arg + 1), {});
     else
-      try(SetInputSource(self, arg), {});
+      ctry(SetInputSource(self, arg), {});
   }
 
   return Ok;

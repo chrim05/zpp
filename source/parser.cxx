@@ -61,17 +61,17 @@ void TryToReplaceIdentifierWithKeyword(Token* token) {
     return;
   
   // checking for all keywords ensuring the lenght is the same of the token
-  if (token->length == 2 and SmallFixedCStringsAreEqual( // fn
+  if (token->length == 2 and FixedCStringsAreEqual( // fn
     token->location.source_reference->buffer + token->location.index, static_cstring("fn"), token->length
   ))
     token->tag = TokenTagKwFn;
 
-  else if (token->length == 6 and SmallFixedCStringsAreEqual( // export
+  else if (token->length == 6 and FixedCStringsAreEqual( // export
     token->location.source_reference->buffer + token->location.index, static_cstring("export"), token->length
   ))
     token->tag = TokenTagKwExport;
   
-  else if (token->length == 4 and SmallFixedCStringsAreEqual( // quit
+  else if (token->length == 4 and FixedCStringsAreEqual( // quit
     token->location.source_reference->buffer + token->location.index, static_cstring("quit"), token->length
   ))
     token->tag = TokenTagKwQuit;
@@ -116,11 +116,11 @@ void ParseNamedType(ZppParser* self) {
   auto value = GetTokenValue(&self->current);
   auto length = self->current.length;
 
-  if (self->current.length == 2 and SmallFixedCStringsAreEqual(
+  if (self->current.length == 2 and FixedCStringsAreEqual(
     value, static_cstring("u8"), length
   ))
     VisitTypeLoadBuiltinType(&self->ast_visitor, BuiltinTypeTagU8, self->current.location);
-  else if (self->current.length == 3 and SmallFixedCStringsAreEqual(
+  else if (self->current.length == 3 and FixedCStringsAreEqual(
     value, static_cstring("u32"), length
   ))
     VisitTypeLoadBuiltinType(&self->ast_visitor, BuiltinTypeTagU32, self->current.location);
@@ -415,7 +415,7 @@ void ParseFnGlobalNode(ZppParser* self, u8 modifier_export) {
   // parsing fn name() 'e: T3 {}'
   ParseNamedBlock(self);
 
-  catch(VectorPush(&self->ast_visitor.functions, instr_index), {
+  ccatch(VectorPush(&self->ast_visitor.functions, instr_index), {
     DbgString("Failed to add instr index to functions");
   });
 }
