@@ -1,0 +1,25 @@
+import 'std:console.zpp' (
+  eprint,
+  eprintf -- eprint for lazy fmt
+)
+
+import 'std:mem.zpp' (
+  Chunk,
+  drop_chunk,
+  init_rchunk = init_resizable_chunk
+)
+
+import 'std:string.zpp' (
+  lazy_fmt
+)
+
+fn main(argc: u32, argv: **u8) -> u8:
+  chunk: Chunk = init_rchunk(32)
+  defer drop_chunk(&mut chunk)
+
+  if argc != 2:
+    eprint('expected 1 argument')
+    return 1
+  
+  eprintf(lazy_fmt!(&mut chunk, 'you passed this argument: {}\n', argv[1]))
+  return 0

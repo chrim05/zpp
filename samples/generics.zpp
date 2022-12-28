@@ -1,10 +1,9 @@
-import "std:vector.zpp";
+fn add(|T| a: T, b: T) -> T:
+  return a + b
 
-test "std vector" {
-  let vec = CreateEmptyVector|Vec<i32>|();
+fn main(argc: u32, argv: **u8) -> u8:
+  a: u8 = add(|u8| 1, 2)
+  b: i32 = add(|i32| 3, 4)
 
-  VectorPush(vec);
-  let one = VectorPop(vec);
-
-  Assert!(one == 1);
-}
+  return a + b as u8 + 1
+  

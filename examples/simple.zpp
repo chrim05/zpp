@@ -1,0 +1,5 @@
+fn main(argc: u32, argv: **u8) -> u8:
+  return square(argc as u8 - 1)
+
+fn square(n: u8) -> u8:
+  return n * n

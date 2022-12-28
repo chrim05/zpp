@@ -1,0 +1,48 @@
+import 'std:console.zpp' ( eprint )
+import 'std:strutils.zpp' ( repr_int )
+
+import 'std:mem.zpp' (
+  Chunk,
+  drop_chunk,
+  init_rchunk = init_resizable_chunk
+)
+
+fn pow(base: u64, exp: u16) -> u64:
+  r: u64 = 1
+
+  for .., exp > 0, exp -= 1:
+    r *= base
+
+  return r
+
+-- iterative fibonacci
+fn ifib(n: u16) -> u64:
+  a: u64 = 0
+  b: u64 = 1
+
+  for .., n > 0, n -= 1:
+    t: u64 = a
+
+    a = b
+    b = t + b
+
+  return a
+
+fn infinite_loop() -> void:
+  while true:
+    pass
+
+fn main(argc: u32, argv: **u8) -> u8:
+  chunk: Chunk = init_rchunk(16)
+  defer drop_chunk(&mut chunk)
+
+  for i: u64 = 0, i < 100, i += 1:
+    eprint(repr_int(|u64| &mut chunk, i))
+  
+  for .., argc > 1, argc -= 1:
+    eprint(argv[argc - 1])
+  
+  if false:
+    infinite_loop()
+
+  return pow(10, 2) + ifib(30)

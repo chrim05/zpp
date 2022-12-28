@@ -1,0 +1,43 @@
+import 'std:mem.zpp' ( Fat )
+
+type Vec3 = (x: u64, y: u64, z: u64)
+type String = (len: u64, ptr: *u8) -- this actually exists in 'std:string.zpp'
+
+fn add(a: i32, b: i32) -> i32:
+  return a + b
+
+fn main(argc: u32, argv: **u8) -> u8:
+  THIS_IS_CONST: *u8 = cstr!('this must be a comptime value')
+
+  s: *u8 = cstr!('hello world') -- this points to the data segment
+  y: String = 'sized literal string' -- this also points to it
+  c: u8 = 'c'
+  i: i32 = -1
+  u: u64 = 1
+  f: f32 = 3.14
+  k: i32 = .. -- not assigned (potentially any value)
+  v: Vec3 = (x: 1, y: 2, z: 3)
+  -- error: cannot clone v value (use `&v` or `clone!(v)`)
+  -- w: Vec3 = v
+  a: [2 * i32] = [1, 2] -- static array
+  b: Fat[i32] = (len: 2, ptr: &a) -- sized array
+  
+  s = cstr!('goodbye')
+  i = true
+  u = 'i'
+  c = null
+  f = false
+
+  -- the `..` value can also be passed to function calls 
+  -- (it's actually a value coercable to any type)
+  x: i32 = add(1, ..)
+
+  if x == 1:
+    pass
+  else:
+    pass
+  
+  -- it can be used to discard values as well
+  .. = 1
+
+  return 0

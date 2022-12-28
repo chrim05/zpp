@@ -1,0 +1,10 @@
+fn main(argc: u32, argv: **u8) -> u8:
+  x: u8 = 0
+  y: *mut u8 = &mut x
+  z: *u8 = &x
+
+  x = 2
+  x += 1
+  *y = *z
+  -- *z = 1 -- unable to write to unmutable pointer
+  return 0

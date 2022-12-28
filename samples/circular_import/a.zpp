@@ -1,9 +1,0 @@
-import "b.zpp";
-
-export fn a() {
-
-}
-
-test "a" {
-  b();
-}

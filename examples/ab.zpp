@@ -1,0 +1,47 @@
+import 'std:console.zpp' (
+  eprint,
+  eprintf -- eprint for lazy fmt
+)
+
+import 'std:string.zpp' (
+  cstr_to_fat, -- creates a fat pointer (string) from a cstring
+  fmt
+)
+
+import 'std:strutils.zpp' (
+  parse_int,
+  repr_int
+)
+
+import 'std:mem.zpp' (
+  Chunk,
+  drop_chunk,
+  init_rchunk = init_resizable_chunk
+)
+
+fn main(argc: u32, argv: **u8) -> u8:
+  chunk: Chunk = init_rchunk(64)
+  defer drop_chunk(&mut chunk)
+
+  if argc != 3:
+    eprint('missing argument "a", "b" or waste arguments\n')
+    return 1
+  
+  -- try statement always returns void, functions are designed to write to the output parameter
+  --  .. and return an u8 as error (0 = ok, _ = error_code)
+  try parse_int(|i32| cstr_to_fat(&mut chunk, argv[1]), out a: i32):
+    eprint('argument "a" is not i32\n')
+    return 1
+
+  try parse_int(|i32| cstr_to_fat(&mut chunk, argv[2]), out b: i32):
+    eprint('argument "b" is not i32\n')
+    return 1
+
+  -- ensuring a + b will never overflow (maxi32 + maxi32 = maxi64)
+  eprint(fmt!(
+    '{} {} = {}\n',
+      repr_int(|i32| &mut chunk, a),
+      repr_int(|i32| &mut chunk, b),
+      repr_int(|i64| &mut chunk, (a as i64 + b as i64))
+  ))
+  return 0

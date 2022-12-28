@@ -1,0 +1,54 @@
+import 'std:string.zpp' (
+  String -- alias for Fat[u8]
+)
+
+-- import 'std:debug.zpp' (
+--   assert
+-- )
+
+import 'std:mem.zpp' (
+  Chunk,
+  chunk_alloc
+)
+
+fn concat_string(chunk: *mut Chunk, a: *String, b: *String) -> String:
+  l: u64 = a->len + b->len
+  -- this is not actually necessary since `chunk_alloc` already provides an uncatchable error
+  -- assert!(chunk_has_space(&chunk, l))
+  p: *mut u8 = chunk_alloc(chunk, l)
+  i: u64 = 0
+
+  for .., i < a->len, i += 1:
+    p[i] = a->ptr[i]
+  
+  for .., i < b->len, i += 1:
+    p[i] = b->ptr[i - a->len]
+
+  return (len: l, ptr: p as *u8)
+
+-- the c version
+-- 
+-- #include <malloc.h>
+-- #include <stdint.h>
+-- 
+-- typedef struct {
+--   uint64_t length;
+--   char* ptr;
+-- } string;
+-- 
+-- string concat_string(string* a_ref, string* b_ref) {
+--   uint64_t l = a_ref->length + b_ref->length;
+--   char* p = (char*)malloc(l);
+-- 
+--   uint64_t i = 0;
+-- 
+--   // copying from a_ref into first part of p
+--   for (; i < a_ref->length; i++)
+--     p[i] = a_ref->ptr[i];
+--   
+--   // copying from b_ref into last part of p
+--   for (; i < b_ref->length; i++)
+--     p[i] = b_ref->ptr[i - a_ref->length];
+-- 
+--   return (string) { .length = l, .ptr = p };
+-- }

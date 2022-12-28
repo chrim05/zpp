@@ -1,0 +1,6 @@
+fn main(argc: u32, argv: **u8) -> u8:
+  while argc > 1:
+    break
+
+  while true:
+    pass

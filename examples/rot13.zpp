@@ -1,0 +1,68 @@
+import 'std:string.zpp' ( String, string_eq )
+import 'std:debug.zpp' ( expect )
+
+import 'std:mem.zpp' (
+  Chunk, chunk_alloc, drop_chunk,
+  init_rchunk = init_resizable_chunk
+)
+
+-- returns whether `c` is 'a'..'z'
+fn is_lower(c: u8) -> u8:
+  return c >= 'a' and c <= 'z'
+
+-- returns whether `c` is 'A'..'Z'
+fn is_upper(c: u8) -> u8:
+  return c >= 'A' and c <= 'Z'
+
+-- returns whether `c` is 'a'..'z' or 'A'..'Z'
+fn is_alpha(c: u8) -> u8:
+  return is_lower(c) or is_upper(c)
+
+-- the function encrypts or decrypts `source`
+-- `chunk` is required to allocate the output buffer
+-- the function allocates `source->len` bytes to `chunk`
+-- the used algorithm is generally O(n)
+fn process(chunk: *mut Chunk, source: *String) -> String:
+  -- allocating the output buffer
+  ptr: *mut u8 = chunk_alloc(chunk, source->len)
+
+  -- for each char in the source buffer
+  for i: u64 = 0, i < source->len, i += 1:
+    c: u8 = source->ptr[i]
+
+    -- skipping non alpha chars
+    -- we write them in the output buffer as they are
+    if not is_alpha(c):
+      ptr[i] = c
+      continue
+
+    -- calculating and writing the rotated char to the output buffer
+    -- we also take care about the letter size
+    offset: u8 = 'a' if is_lower(c) else 'A'
+    ptr[i] = (c - offset + 13) % 26 + offset
+
+  return (len: source->len, ptr: ptr as *u8)
+
+---------------------------------------------------------------------
+--                          test area                              --
+---------------------------------------------------------------------
+
+fn make_test(source: *String, expected: *String) -> void:
+  chunk: Chunk = init_rchunk(16)
+  defer drop_chunk(&mut chunk)
+
+  expect!(string_eq(&process(&mut chunk, source), expected))
+
+test 'alpha':
+  make_test(&'hello', &'uryyb')
+  make_test(&'hello how are you', &'uryyb ubj ner lbh')
+  make_test(&'Hello', &'Uryyb')
+  make_test(&'HELLO123', &'URYYB123')
+
+test 'alphanum':
+  make_test(&'123hello123', &'123uryyb123')
+  make_test(&'hello 12 how are you', &'uryyb 12 ubj ner lbh')
+
+test 'all':
+  make_test(&'123hello??', &'123uryyb??')
+  make_test(&'123heLLO!', &'123urYYB!')
