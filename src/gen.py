@@ -188,14 +188,16 @@ class Generator:
     )
 
   def generate_llvm_bin(self, realdata_left, op, realdata_right):
+    is_signed = realdata_left.realtype.is_signed
+    
     match op.kind:
       case '+': return self.cur_builder.add(realdata_left.llvm_data, realdata_right.llvm_data)
       case '-': return self.cur_builder.sub(realdata_left.llvm_data, realdata_right.llvm_data)
       case '*': return self.cur_builder.mul(realdata_left.llvm_data, realdata_right.llvm_data)
-      case '/': return self.cur_builder.sdiv(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '/': return getattr(self.cur_builder, 'sdiv' if is_signed else 'udiv')(realdata_left.llvm_data, realdata_right.llvm_data)
 
       case '==' | '!=' | '<' | '>' | '<=' | '>=':
-        return self.cur_builder.icmp_signed(op.kind, realdata_left.llvm_data, realdata_right.llvm_data)
+        return getattr(self.cur_builder, 'icmp_signed' if is_signed else 'icmp_unsigned')(op.kind, realdata_left.llvm_data, realdata_right.llvm_data)
 
       case _:
         raise NotImplementedError()
@@ -358,7 +360,8 @@ class Generator:
     if source_bits == target_bits and realdata_expr.realtype.is_signed == target_rt.is_signed:
       return
     
-    llvm_caster = self.cur_builder.sext if source_bits < target_bits else self.cur_builder.trunc
+    is_signed = realdata_expr.realtype.is_signed
+    llvm_caster = getattr(self.cur_builder, 'sext' if is_signed else 'zext') if source_bits < target_bits else self.cur_builder.trunc
 
     realdata_expr.realtype = target_rt
     realdata_expr.llvm_data = llvm_caster(
@@ -808,7 +811,7 @@ class Generator:
     self.push_scope()
 
     t = self.gen_fn(fn, fn.node.name.value, key)
-    
+
     self.pop_scope()
 
     return t
