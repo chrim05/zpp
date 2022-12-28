@@ -74,6 +74,12 @@ class Node:
       case 'struct_type_node':
         return f'<struct_type_node {self.fields}>'
       
+      case 'struct_init_node':
+        return f'<struct_init_node {self.fields}>'
+      
+      case 'struct_field_init_node':
+        return f'{self.name.value}: {self.expr}'
+      
       case 'struct_field_node':
         return f'{self.name.value}: {self.type}'
       
@@ -94,6 +100,9 @@ class Node:
       
       case 'assignment_node':
         return f'{self.lexpr} {self.op} {self.rexpr}'
+      
+      case 'dot_node':
+        return f'{self.left_expr}.{self.right_expr}'
 
       case _:
         return f'<repr `{self.value}`>'
@@ -182,6 +191,9 @@ class RealType:
 
   def is_ptr(self):
     return self.kind == 'ptr_rt'
+  
+  def is_struct(self):
+    return self.kind == 'struct_rt'
   
   def __eq__(self, obj):
     if not isinstance(obj, RealType):

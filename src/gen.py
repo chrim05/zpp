@@ -141,7 +141,7 @@ class Generator:
       llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realtype), value)
     )
 
-  def evaluate_double_dot(self, dd_node):
+  def evaluate_uninitialized(self, dd_node):
     if self.ctx.kind == 'placeholder_rt':
       error('uninitialized term has no clear type here', dd_node.pos)
 
@@ -155,12 +155,7 @@ class Generator:
     if new_ctx is not None:
       self.push_ctx(new_ctx)
     
-    match node.kind:
-      case '..':
-        t = self.evaluate_double_dot(node)
-
-      case _:
-        t = getattr(self, f'evaluate_{node.kind}')(node)
+    t = getattr(self, f'evaluate_{node.kind}')(node)
 
     if new_ctx is not None:
       self.pop_ctx()
@@ -175,12 +170,12 @@ class Generator:
 
   def evaluate_null(self, null_tok):
     realtype = self.ctx if self.ctx.is_int() or self.ctx.is_ptr() else RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
-    value = 0
+    llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), None if realtype.is_ptr() else 0)
     
     return RealData(
       realtype,
-      value=value,
-      llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realtype), value)
+      value=0,
+      llvm_data=llvm_data
     )
 
   def evaluate_id(self, id_tok):
@@ -227,6 +222,12 @@ class Generator:
       return
     
     error(f'types `{rt1}` and `{rt2}` are not compatible', pos)
+
+  def expect_realdata_is_struct(self, realdata, pos):
+    if realdata.realtype.is_struct():
+      return
+    
+    error(f'expected struct expression, got `{realdata.realtype}`', pos)
 
   def expect_realdata_is_numeric(self, realdata, pos):
     if realdata.realtype.is_numeric():
@@ -299,6 +300,55 @@ class Generator:
     realdata_expr.llvm_data = self.cur_builder.bitcast(
       realdata_expr.llvm_data,
       self.convert_realtype_to_llvmtype(target_rt)
+    )
+  
+  def evaluate_dot_node(self, dot_node):
+    instance_realdata = self.evaluate_node(dot_node.left_expr, REALTYPE_PLACEHOLDER)
+    field_name = dot_node.right_expr.value
+
+    self.expect_realdata_is_struct(instance_realdata, dot_node.pos)
+
+    if field_name not in instance_realdata.realtype.fields:
+      error(f'struct `{instance_realdata.realtype}` has no field `{field_name}`', dot_node.pos)
+
+    field_index = list(instance_realdata.realtype.fields.keys()).index(field_name)
+
+    if isinstance(instance_realdata.llvm_data, ll.LoadInstr):
+      self.cur_builder.remove(instance_realdata.llvm_data)
+      instance_realdata.llvm_data = instance_realdata.llvm_data.operands[0]
+
+      llvm_data = self.cur_builder.load(self.cur_builder.gep(
+        instance_realdata.llvm_data,
+        [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), field_index)],
+        inbounds=True
+      ))
+    else:
+      llvm_data = self.cur_builder.extract_value(instance_realdata.llvm_data, field_index)
+
+    return RealData(
+      instance_realdata.realtype.fields[field_name],
+      llvm_data=llvm_data
+    )
+  
+  def evaluate_struct_init_node(self, init_node):
+    field_names = list(map(lambda field: field.name.value, init_node.fields))
+    ctx_realtypes = list(self.ctx.fields.values()) if self.ctx.is_struct() else []
+    field_realdatas = [self.evaluate_node(field.expr, ctx_realtypes[i] if i < len(ctx_realtypes) else REALTYPE_PLACEHOLDER) for i, field in enumerate(init_node.fields)]
+    field_realtypes = map(lambda realdata: realdata.realtype, field_realdatas)
+
+    for i, field_name in enumerate(field_names):
+      if field_names.count(field_name) > 1:
+        error(f'field `{field_name}` is dupplicate', init_node.fields[i].name.pos)
+    
+    realtype = RealType('struct_rt', fields=dict(zip(field_names, field_realtypes)))
+    llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), ll.Undefined)
+
+    for i, field_realdata in enumerate(field_realdatas):
+      llvm_data = self.cur_builder.insert_value(llvm_data, field_realdata.llvm_data, i)
+
+    return RealData(
+      realtype,
+      llvm_data=llvm_data
     )
 
   def make_numeric_cast(self, realdata_expr, target_rt):
@@ -638,13 +688,19 @@ class Generator:
     self.cur_builder = ll.IRBuilder(llvm_block_exit)
 
   def evaluate_assignment_node_stmt(self, assignment_node):
-    realdata_lexpr = self.evaluate_assignment_leftexpr_node(assignment_node.lexpr)
-    realdata_rexpr = self.evaluate_node(assignment_node.rexpr, realdata_lexpr.realtype.type)
+    is_discard = assignment_node.lexpr.kind == '..'
 
-    self.expect_realtype(realdata_lexpr.realtype.type, realdata_rexpr.realtype, assignment_node.pos)
+    realdata_lexpr = self.evaluate_assignment_leftexpr_node(assignment_node.lexpr) if not is_discard else None
+    realdata_rexpr = self.evaluate_node(assignment_node.rexpr, realdata_lexpr.realtype.type if not is_discard else REALTYPE_PLACEHOLDER)
 
-    if not realdata_lexpr.realtype.is_mut:
+    if not is_discard:
+      self.expect_realtype(realdata_lexpr.realtype.type, realdata_rexpr.realtype, assignment_node.pos)
+
+    if not is_discard and not realdata_lexpr.realtype.is_mut:
       error('cannot write to unmutable pointer', assignment_node.pos)
+
+    if is_discard and assignment_node.op.kind != '=':
+      error('discard statement only accepts `=` as operator', assignment_node.pos)
 
     llvm_rexpr = {
       '=': lambda: realdata_rexpr.llvm_data,
@@ -652,7 +708,9 @@ class Generator:
       '-=': lambda: self.cur_builder.sub(self.cur_builder.load(realdata_lexpr.llvm_data), realdata_rexpr.llvm_data),
       '*=': lambda: self.cur_builder.mul(self.cur_builder.load(realdata_lexpr.llvm_data), realdata_rexpr.llvm_data),
     }[assignment_node.op.kind]()
-    self.cur_builder.store(llvm_rexpr, realdata_lexpr.llvm_data)
+
+    if not is_discard:
+      self.cur_builder.store(llvm_rexpr, realdata_lexpr.llvm_data)
 
   def evaluate_stmt(self, stmt):
     try:

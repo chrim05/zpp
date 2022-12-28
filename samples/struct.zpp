@@ -1,0 +1,6 @@
+type Person = (name: *u8, age: u8)
+
+fn main(argc: u32, argv: **u8) -> i32:
+  person: Person = (name: null, age: argc as u8)
+  person2: Person = (name: null, age: 1) -- inferred
+  return person.age as i32 - 1

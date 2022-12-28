@@ -1,7 +1,7 @@
 type Vec3 = (x: u64, y: u64, z: u64)
 
 fn vec_add(a: *Vec3, b: *Vec3) -> Vec3:
-  return (x: a.x + b.x, y: a.y + b.y, z: a.z + b.z)
+  return (x: a->x + b->x, y: a->y + b->y, z: a->z + b->z)
 
 fn main(argc: u32, argv: **u8) -> i32:
   v1: Vec3 = (x: 1, y: 3, z: 5)

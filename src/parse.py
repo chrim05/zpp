@@ -57,9 +57,6 @@ class Parser:
     fields = []
 
     while True:
-      if len(fields) == 0 and self.match_tok(')', allow_on_new_line=True):
-        break
-
       name = self.expect_and_consume('id', allow_on_new_line=True)
       self.expect_and_consume(':')
       type = self.parse_type()
@@ -225,7 +222,7 @@ class Parser:
     term = self.consume_cur()
 
     match term.kind:
-      case 'num' | 'id' | 'true' | 'false' | 'null' | '..':
+      case 'num' | 'id' | 'true' | 'false' | 'null' | 'uninitialized':
         pass
     
       case '+' | '-' | '&' | '*':
@@ -244,10 +241,11 @@ class Parser:
           term.is_mut = is_mut
       
       case '(':
-        expr = self.parse_expr()
-        self.expect_and_consume(')')
-
-        term = expr
+        if self.match_pattern(['id', ':'], True):
+          term = self.parse_struct_init_node(term.pos)
+        else:
+          term = self.parse_expr()
+          self.expect_and_consume(')')
 
       case _:
         error('invalid term in expression', term.pos)
@@ -257,8 +255,48 @@ class Parser:
       is_internal_call = self.consume_tok_if_match('!') is not None
       term = self.parse_call_node(term, is_internal_call)
     
+    while self.match_toks(['.', '->'], allow_on_new_line=True):
+      dot_tok = self.consume_cur()
+      left_expr = term if dot_tok.kind == '.' else self.make_node(
+        'unary_node',
+        op=Node('*', value='*', pos=dot_tok.pos),
+        expr=term,
+        pos=dot_tok.pos
+      )
+      right_expr = self.expect_and_consume('id')
+
+      term = self.make_node(
+        'dot_node',
+        left_expr=left_expr,
+        right_expr=right_expr,
+        pos=dot_tok.pos
+      )
+    
     return term
   
+  def parse_struct_init_node(self, pos):
+    fields = []
+
+    while True:
+      name = self.expect_and_consume('id', allow_on_new_line=True)
+      self.expect_and_consume(':')
+      expr = self.parse_expr()
+
+      fields.append(self.make_node('struct_field_init_node', name=name, expr=expr, pos=name.pos))
+
+      if not self.match_tok(','):
+        break
+      
+      self.advance()
+
+    self.expect_and_consume(')', allow_on_new_line=True)
+
+    return self.make_node(
+      'struct_init_node',
+      fields=fields,
+      pos=pos
+    )
+
   def parse_large_term(self):
     term = self.parse_term()
 

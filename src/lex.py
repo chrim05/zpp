@@ -7,7 +7,7 @@ KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',
   'as', 'while', 'break', 'continue', 'mut',
-  'for'
+  'for', 'uninitialized'
 ]
 
 class Lexer:
@@ -96,7 +96,7 @@ class Lexer:
     t = ''
     p = self.cur_pos
 
-    while self.has_char and self.cur.isalnum():
+    while self.has_char and (self.cur.isalnum() or self.cur == '_'):
       t += self.cur
       self.advance()
     
@@ -135,7 +135,7 @@ class Lexer:
     if not self.has_char:
       return
     
-    if self.cur.isalnum():
+    if self.cur.isalnum() or self.cur == '_':
       t = self.collect_word()
     else:
       t = self.collect_punctuation()
