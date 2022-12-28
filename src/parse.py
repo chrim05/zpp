@@ -257,6 +257,11 @@ class Parser:
       is_internal_call = self.consume_tok_if_match('!') is not None
       term = self.parse_call_node(term, is_internal_call)
     
+    return term
+  
+  def parse_large_term(self):
+    term = self.parse_term()
+
     if self.match_tok('as'):
       term = self.parse_as_node(term)
     
@@ -283,7 +288,7 @@ class Parser:
     return self.parse_bin(
       ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
         ['+', '-'], lambda: self.parse_bin(
-          ['*', '/'], lambda: self.parse_term()
+          ['*', '/'], lambda: self.parse_large_term()
         )
       )
     )
@@ -401,6 +406,30 @@ class Parser:
       pos=pos
     )
 
+  def parse_for_node(self):
+    pos = self.consume_cur().pos
+    left_node = self.parse_var_decl() if self.consume_tok_if_match('..') is None else None
+    self.expect_and_consume(',')
+    mid_node = self.parse_expr()
+    self.expect_and_consume(',')
+    
+    if self.match_pattern(['..', ':']):
+      self.advance()
+      right_node = None
+    else:
+      right_node = self.parse_stmt()
+      
+    body = self.parse_block()
+
+    return self.make_node(
+      'for_node',
+      left_node=left_node,
+      mid_node=mid_node,
+      right_node=right_node,
+      body=body,
+      pos=pos
+    )
+
   def parse_stmt(self):
     match self.cur.kind:
       case 'pass':
@@ -417,6 +446,9 @@ class Parser:
 
       case 'break' | 'continue':
         return self.make_node(f'{self.cur.kind}_node', pos=self.consume_cur().pos)
+
+      case 'for':
+        return self.parse_for_node()
 
       case _:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):

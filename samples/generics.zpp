@@ -1,9 +1,9 @@
 fn add(|T| a: T, b: T) -> T:
   return a + b
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   a: u8 = add(|u8| 1, 2)
   b: i32 = add(|i32| 3, 4)
 
-  return a + b as u8 + 1
+  return a as i32 + b + 1
   

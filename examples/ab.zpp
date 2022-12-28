@@ -19,7 +19,7 @@ import 'std:mem.zpp' (
   init_rchunk = init_resizable_chunk
 )
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   chunk: Chunk = init_rchunk(64)
   defer drop_chunk(&mut chunk)
 

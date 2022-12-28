@@ -4,7 +4,7 @@ import '!/mem.zpp' ( init_rchunk = init_resizable_chunk )
 import '!/io.zpp' ( read_file_to_buffer )
 import '!/seq.zpp' ( List, init_list )
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   -- allocating 1mb for the starting allocation chunk
   compilation_bag: CompilationBag = (src: null, chunk: init_rchunk(1'000'000))
   -- reading the source code

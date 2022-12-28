@@ -1,7 +1,7 @@
 fn add(|T, R| a: T, b: T) -> R:
   return (a + b) as R
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   a: i32 = 1
   b: i32 = 2
   

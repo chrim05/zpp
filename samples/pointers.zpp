@@ -1,7 +1,9 @@
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   x: u8 = 0
   y: *mut u8 = &mut x
   z: *u8 = &x
+  w: *i32 = &10
+  -- k: *mut u8 = &mut 10 -- temporary expression allocation address cannot be mutable
 
   x = 2
   x += 1

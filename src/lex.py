@@ -6,7 +6,8 @@ DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=']
 KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',
-  'as', 'while', 'break', 'continue', 'mut'
+  'as', 'while', 'break', 'continue', 'mut',
+  'for'
 ]
 
 class Lexer:

@@ -83,6 +83,9 @@ class Node:
       case 'while_node':
         return f'while {self.cond}{repr_block(self.body)}'
       
+      case 'for_node':
+        return f'for {self.left_node}, {self.mid_node}, {self.right_node}{repr_block(self.body)}'
+      
       case 'break_node':
         return 'break'
       
@@ -161,6 +164,12 @@ class RealType:
     assert self.is_numeric()
 
     return int(self.kind[1:-3])
+  
+  @property
+  def is_signed(self):
+    assert self.is_numeric()
+
+    return self.kind[0] == 'i'
   
   def is_int(self):
     return self.kind in ['i8_rt', 'i16_rt', 'i32_rt', 'i64_rt', 'u8_rt', 'u16_rt', 'u32_rt', 'u64_rt']

@@ -14,6 +14,7 @@ class Generator:
     self.llvm_builders = [] # the last one is the builder in use
     self.ctx_types = []
     self.loops = []
+    self.tmp_counter = 0
   
   @property
   def map(self) -> MappedAst:
@@ -304,7 +305,7 @@ class Generator:
     source_bits = realdata_expr.realtype.bits
     target_bits = target_rt.bits
 
-    if source_bits == target_bits:
+    if source_bits == target_bits and realdata_expr.realtype.is_signed == target_rt.is_signed:
       return
     
     llvm_caster = self.cur_builder.sext if source_bits < target_bits else self.cur_builder.trunc
@@ -327,7 +328,7 @@ class Generator:
     # elif self.is_ptrint_cast(source_rt, target_rt):
     #   pass
     else:
-      error(f'invalid cast from `{source_rt}` to `{target_rt}`')
+      error(f'invalid cast from `{source_rt}` to `{target_rt}`', as_node.pos)
     
     if realdata_expr.is_comptime_value():
       realdata_expr.realtype_is_coerced = None
@@ -336,18 +337,6 @@ class Generator:
 
   def is_deref_node(self, node):
     return node.kind == 'unary_node' and node.op.kind == '*'
-  
-  # def evaluate_reference_node(self, expr_node, is_mut, op_pos, allow_to_allocate_expr):
-  #   if self.is_ptr_deref_node(expr_node):
-  #     realdata_expr = self.evaluate_node(expr_node)
-  #     self.expect_realdata_is_ptr(realdata_expr, )
-  # 
-  #   try:
-  #     attr = getattr(self, f'evaluate_{expr_node.kind}_refnode')
-  #   except AttributeError:
-  #     error('cannot take address of expression', op_pos)
-  #   
-  #   return attr(expr_node, is_mut, op_pos)
 
   def expect_realdata_is_ptr(self, realdata, pos):
     if realdata.realtype.is_ptr():
@@ -564,15 +553,26 @@ class Generator:
     
     self.cur_builder.branch(self.loop[1])
 
+  def create_tmp_alloca_for_expraddr(self, realdata_expr):
+    self.tmp_counter += 1
+
+    tmp = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realdata_expr.realtype), name=f'tmp.{self.tmp_counter}')
+    self.cur_builder.store(realdata_expr.llvm_data, tmp)
+
+    return tmp
+
   def evaluate_reference_node(self, unary_node):
     realdata_expr = self.evaluate_node(unary_node.expr, REALTYPE_PLACEHOLDER)
 
-    if not isinstance(realdata_expr.llvm_data, ll.LoadInstr):
-      error('cannot take address of expression', unary_node.pos)
-    
-    self.cur_builder.remove(realdata_expr.llvm_data)
+    if isinstance(realdata_expr.llvm_data, ll.LoadInstr):
+      self.cur_builder.remove(realdata_expr.llvm_data)
+      realdata_expr.llvm_data = realdata_expr.llvm_data.operands[0]
+    else:
+      if unary_node.is_mut:
+        error('temporary expression allocation address cannot be mutable', unary_node.pos)
 
-    realdata_expr.llvm_data = realdata_expr.llvm_data.operands[0]
+      realdata_expr.llvm_data = self.create_tmp_alloca_for_expraddr(realdata_expr)
+    
     realdata_expr.realtype = RealType('ptr_rt', is_mut=unary_node.is_mut, type=realdata_expr.realtype)
 
     return realdata_expr
@@ -594,6 +594,48 @@ class Generator:
       realdata_expr.realtype = RealType('ptr_rt', is_mut=True, type=realdata_expr.realtype)
 
     return realdata_expr
+  
+  def evaluate_for_node_stmt(self, for_node):
+    llvm_block_mid = self.cur_fn[1].append_basic_block('condcheck_block')
+    llvm_block_loop = self.cur_fn[1].append_basic_block('loop_branch_block')
+    llvm_block_right = self.cur_fn[1].append_basic_block('inc_branch_block')
+    llvm_block_exit = self.cur_fn[1].append_basic_block('exit_branch_block')
+    
+    self.push_sub_scope()
+
+    if for_node.left_node is not None:
+      self.evaluate_var_decl_node_stmt(for_node.left_node)
+
+    self.cur_builder.branch(llvm_block_mid)
+    self.cur_builder = ll.IRBuilder(llvm_block_mid)
+
+    cond_rd = self.evaluate_node(for_node.mid_node, RealType('u8_rt'))
+    self.expect_realdata_is_numeric(cond_rd, for_node.mid_node.pos)
+
+    if cond_rd.is_comptime_value():
+      self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
+    else:
+      self.cur_builder.cbranch(cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
+
+    self.push_builder(ll.IRBuilder(llvm_block_loop))
+    self.push_loop((llvm_block_right, llvm_block_exit))
+
+    has_terminator = self.evaluate_block(for_node.body)
+    self.fix_sub_scope_terminator(has_terminator, llvm_block_right)
+
+    self.push_builder(ll.IRBuilder(llvm_block_right))
+
+    if for_node.right_node is not None:
+      self.evaluate_stmt(for_node.right_node)
+
+    self.cur_builder.branch(llvm_block_mid)
+    self.pop_builder()
+
+    self.pop_loop()
+    self.pop_builder()
+    self.pop_scope()
+
+    self.cur_builder = ll.IRBuilder(llvm_block_exit)
 
   def evaluate_assignment_node_stmt(self, assignment_node):
     realdata_lexpr = self.evaluate_assignment_leftexpr_node(assignment_node.lexpr)
@@ -752,6 +794,9 @@ class Generator:
       llvmbuilder_allocas
     )
 
+    old_loops = self.loops
+    self.loops = []
+
     self.push_sub_scope()
     self.push_builder(llvmbuilder_entry)
 
@@ -763,6 +808,8 @@ class Generator:
 
     self.pop_builder()
     self.pop_scope()
+
+    self.loops = old_loops
   
     self.fn_in_evaluation.remove_by_key(key)
     self.fn_evaluated[key] = r
@@ -826,7 +873,7 @@ def check_main_proto(main_proto, main_pos):
   ]:
     throw_error()
 
-  if main_proto.ret_type.kind != 'u8_rt':
+  if main_proto.ret_type.kind != 'i32_rt':
     throw_error()
 
 def gen(mapped_ast):

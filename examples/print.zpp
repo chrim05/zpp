@@ -13,7 +13,7 @@ import 'std:string.zpp' (
   lazy_fmt
 )
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   chunk: Chunk = init_rchunk(32)
   defer drop_chunk(&mut chunk)
 

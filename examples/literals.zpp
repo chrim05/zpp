@@ -6,7 +6,7 @@ type String = (len: u64, ptr: *u8) -- this actually exists in 'std:string.zpp'
 fn add(a: i32, b: i32) -> i32:
   return a + b
 
-fn main(argc: u32, argv: **u8) -> u8:
+fn main(argc: u32, argv: **u8) -> i32:
   THIS_IS_CONST: *u8 = cstr!('this must be a comptime value')
 
   s: *u8 = cstr!('hello world') -- this points to the data segment
