@@ -1,0 +1,9 @@
+from 'module_to_import.zpp' import *
+
+fn main(argc: u32, argv: **u8) -> i32:
+  a: Point = (x: 4, y: 20)
+  b: Point = (x: 6, y: 9)
+
+  c: Point = point_add(&a, &b)
+
+  return (c.x + c.y) as i32

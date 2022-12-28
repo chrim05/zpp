@@ -7,12 +7,13 @@ KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',
   'as', 'while', 'break', 'continue', 'mut',
-  'for', 'uninitialized'
+  'for', 'uninitialized', 'import', 'from'
 ]
 
 class Lexer:
-  def __init__(self, src):
+  def __init__(self, src, path):
     self.src = src
+    self.path = path
     self.index = 0
     self.indent = 0
     self.on_new_line = True
@@ -36,12 +37,16 @@ class Lexer:
     return self.src[self.index]
 
   @property
+  def bck(self):
+    return self.src[self.index - 1]
+
+  @property
   def col(self):
     return self.index - self.start_line_index + 1
 
   @property
   def cur_pos(self):
-    return (self.line, self.col)
+    return (self.line, self.col, self.src, self.path)
 
   def advance(self, count=1):
     self.index += count
@@ -75,7 +80,11 @@ class Lexer:
           
           is_collecting_inline_comment = True
         
-        case '_':
+        case _:
+          if is_collecting_inline_comment:
+            self.advance()
+            continue
+
           raise NotImplementedError()
 
       self.advance()
@@ -129,6 +138,21 @@ class Lexer:
 
     return self.make_tok(k, value=k, pos=p)
 
+  def collect_str(self):
+    p = self.cur_pos
+    self.advance()
+    t = ''
+
+    while self.has_char and (self.cur != "'" or self.bck == '\\'):
+      t += self.cur
+      self.advance()
+    
+    return self.make_tok(
+      'str',
+      value=t,
+      pos=p
+    )
+
   def gen_next(self):
     self.skip()
 
@@ -137,14 +161,16 @@ class Lexer:
     
     if self.cur.isalnum() or self.cur == '_':
       t = self.collect_word()
+    elif self.cur == "'":
+      t = self.collect_str()
     else:
       t = self.collect_punctuation()
     
     self.advance()
     return t
 
-def lex(src):
-  l = Lexer(src)
+def lex(src, path):
+  l = Lexer(src, path)
   r = []
   
   while l.has_char:

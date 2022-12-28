@@ -805,7 +805,13 @@ class Generator:
     if key in self.fn_evaluated:
       return self.fn_evaluated[key]
 
-    return self.gen_fn(fn, fn.node.name.value, key)
+    self.push_scope()
+
+    t = self.gen_fn(fn, fn.node.name.value, key)
+    
+    self.pop_scope()
+
+    return t
   
   def declare_generics(self, generic_params, rt_generic_args):
     for param, rt_arg in zip(generic_params, rt_generic_args):
