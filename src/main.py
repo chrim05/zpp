@@ -1,6 +1,6 @@
 from lex import lex
 from parse import parse
-from mapast import mapast
+from mapast import cache_mapast
 from gen import gen
 from sys import argv
 from utils import getabspath
@@ -11,7 +11,7 @@ def compile(path):
 
   toks = lex(src, path)
   ast = parse(toks)
-  mapped_ast = mapast(ast, path)
+  mapped_ast = cache_mapast(path, ast)
   llvmir = gen(mapped_ast)
 
   return toks, ast, mapped_ast, llvmir
@@ -19,7 +19,9 @@ def compile(path):
 if __name__ == '__main__':
   if len(argv) == 2:
     path = getabspath(argv[1])
-    _, _, _, llvmir = compile(path)
+    _, _, mapped_ast, llvmir = compile(path)
+    
+    print(mapped_ast, end='-----------\n\n')
 
     with open(path + '.ll', 'w') as f:
       f.write(repr(llvmir))

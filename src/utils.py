@@ -18,3 +18,17 @@ def getabspath(path):
 
 def fixpath(path):
   return path.replace('\\', '/')
+
+def write_instance_content_to(src_instance, target_instance):
+  target_instance.__dict__ = src_instance.__dict__
+
+def has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids=[]):
+  if not realtype.is_struct():
+    return False
+  
+  if id(realtype) in in_progres_struct_rt_ids:
+    return True
+
+  for _, realtype in realtype.fields.items():
+    if has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids + [id(realtype)]):
+      return True

@@ -1,16 +1,15 @@
-import llvmlite.ir as ll
-
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
-from utils import error
+from utils import error, has_infinite_recursive_layout, write_instance_content_to
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
 
 class Generator:
   def __init__(self, map):
     self.maps = [map]
-    self.output = ll.Module()
+    self.output = []
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
+    self.namedtypes_in_evaluation = ComparatorDict()
     self.llvm_builders = [] # the last one is the builder in use
     self.ctx_types = []
     self.loops = []
@@ -82,17 +81,27 @@ class Generator:
 
     check_sym_is_type(type_node.value, sym)
 
-    return self.evaluate_type(sym.node.type)
+    key = id(sym)
 
-  def evaluate_type(self, type_node):
+    if key in self.namedtypes_in_evaluation:
+      return self.namedtypes_in_evaluation[key]
+
+    r = self.namedtypes_in_evaluation[key] = RealType('placeholder_rt')
+    realtype = self.evaluate_type(sym.node.type, is_top_call=False)
+    self.namedtypes_in_evaluation.remove_by_key(key)
+    write_instance_content_to(realtype, r)
+
+    return r
+
+  def evaluate_type(self, type_node, is_top_call=True):
     match type_node.kind:
       case 'id':
         t = self.evaluate_builtin_type(type_node.value)
 
-        return t if t is not None else self.evaluate_named_type(type_node)
+        r = t if t is not None else self.evaluate_named_type(type_node)
       
       case 'ptr_type_node':
-        return RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type))
+        r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False))
       
       case 'struct_type_node':
         field_names = list(map(lambda field: field.name.value, type_node.fields))
@@ -101,15 +110,20 @@ class Generator:
           if field_names.count(field_name) > 1:
             error(f'field `{field_name}` is dupplicate', type_node.fields[i].name.pos)
         
-        return RealType(
+        r = RealType(
           'struct_rt',
           fields={
-            field.name.value: self.evaluate_type(field.type) for field in type_node.fields
+            field.name.value: self.evaluate_type(field.type, is_top_call=False) for field in type_node.fields
           }
         )
 
       case _:
         raise NotImplementedError()
+    
+    if is_top_call and has_infinite_recursive_layout(r):
+      error('type has infinite recursive layout', type_node.pos)
+
+    return r
 
   def evaluate_fn_proto(self, fn_node):
     arg_types = [self.evaluate_type(arg.type) for arg in fn_node.args]
@@ -141,9 +155,9 @@ class Generator:
       llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realtype), value)
     )
 
-  def evaluate_uninitialized(self, dd_node):
+  def evaluate_undefined(self, dd_node):
     if self.ctx.kind == 'placeholder_rt':
-      error('uninitialized term has no clear type here', dd_node.pos)
+      error('undefined term has no clear type here', dd_node.pos)
 
     return RealData(
       self.ctx,
@@ -180,7 +194,7 @@ class Generator:
 
   def evaluate_id(self, id_tok):
     sym = self.map.get_symbol(id_tok.value, id_tok.pos)
-    llvm_data = self.cur_builder.load(sym.llvm_alloca)
+    llvm_data = self.cur_builder.load(sym.llvm_alloca, typ=self.convert_realtype_to_llvmtype(sym.realtype))
     
     return RealData(
       sym.realtype,
@@ -322,8 +336,9 @@ class Generator:
       llvm_data = self.cur_builder.load(self.cur_builder.gep(
         instance_realdata.llvm_data,
         [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), field_index)],
-        inbounds=True
-      ))
+        inbounds=True,
+        resulting_type=self.convert_realtype_to_llvmtype(instance_realdata.realtype.fields[field_name])
+      ), typ=self.convert_realtype_to_llvmtype(instance_realdata.realtype.fields[field_name]))
     else:
       llvm_data = self.cur_builder.extract_value(instance_realdata.llvm_data, field_index)
 
@@ -408,7 +423,7 @@ class Generator:
 
         return RealData(
           realdata_expr.realtype.type,
-          llvm_data=self.cur_builder.load(realdata_expr.llvm_data)
+          llvm_data=self.cur_builder.load(realdata_expr.llvm_data, typ=self.convert_realtype_to_llvmtype(realdata_expr.realtype.type))
         )
       
       case _:
@@ -432,13 +447,12 @@ class Generator:
 
     self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
 
-    llvm_alloca = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
+    llvm_alloca = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
 
-    self.cur_builder.store(realdata.llvm_data, llvm_alloca)
+    self.cur_builder.store(realdata.llvm_data, llvm_alloca, typ=typ)
 
     sym = Symbol(
       'local_var_sym',
-      is_imported=False,
       realtype=realtype,
       llvm_alloca=llvm_alloca
     )
@@ -609,8 +623,8 @@ class Generator:
   def create_tmp_alloca_for_expraddr(self, realdata_expr):
     self.tmp_counter += 1
 
-    tmp = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realdata_expr.realtype), name=f'tmp.{self.tmp_counter}')
-    self.cur_builder.store(realdata_expr.llvm_data, tmp)
+    tmp = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(realdata_expr.realtype), name=f'tmp.{self.tmp_counter}')
+    self.cur_builder.store(realdata_expr.llvm_data, tmp, typ=typ)
 
     return tmp
 
@@ -713,7 +727,7 @@ class Generator:
     }[assignment_node.op.kind]()
 
     if not is_discard:
-      self.cur_builder.store(llvm_rexpr, realdata_lexpr.llvm_data)
+      self.cur_builder.store(llvm_rexpr, realdata_lexpr.llvm_data, typ=self.convert_realtype_to_llvmtype(realdata_lexpr.realtype))
 
   def evaluate_stmt(self, stmt):
     try:
@@ -739,11 +753,11 @@ class Generator:
 
   def convert_realtype_to_llvmtype(self, realtype):
     if realtype.is_int():
-      return ll.IntType(int(realtype.kind[1:][:-3]))
+      return ll.IntType(realtype.bits)
     
     match realtype.kind:
       case 'ptr_rt':
-        return ll.PointerType(self.convert_realtype_to_llvmtype(realtype.type))
+        return ll.OpaquePointer()
 
       case 'struct_rt':
         return ll.LiteralStructType(list(map(
@@ -786,13 +800,12 @@ class Generator:
 
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
-      llvm_alloca = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
+      llvm_alloca = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
 
-      self.cur_builder.store(self.cur_fn[1].args[i], llvm_alloca)
+      self.cur_builder.store(self.cur_fn[1].args[i], llvm_alloca, typ=typ)
 
       sym = Symbol(
         'local_var_sym',
-        is_imported=False,
         realtype=arg_realtype,
         llvm_alloca=llvm_alloca
       )
@@ -820,7 +833,7 @@ class Generator:
     for param, rt_arg in zip(generic_params, rt_generic_args):
       self.map.declare_symbol(
         param.value,
-        Symbol('alias_sym', is_imported=False, realtype=rt_arg),
+        Symbol('alias_sym', realtype=rt_arg),
         param.pos
       )
 

@@ -7,7 +7,7 @@ KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',
   'as', 'while', 'break', 'continue', 'mut',
-  'for', 'uninitialized', 'import', 'from'
+  'for', 'undefined', 'import'
 ]
 
 class Lexer:

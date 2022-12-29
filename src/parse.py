@@ -222,7 +222,7 @@ class Parser:
     term = self.consume_cur()
 
     match term.kind:
-      case 'num' | 'id' | 'true' | 'false' | 'null' | 'uninitialized':
+      case 'num' | 'id' | 'true' | 'false' | 'null' | 'undefined':
         pass
     
       case '+' | '-' | '&' | '*':
@@ -492,7 +492,7 @@ class Parser:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
           return self.parse_var_decl()
         
-        stmt = self.parse_expr()
+        stmt = self.parse_expr() if self.match_tok('..', allow_on_new_line=True) is None else self.consume_cur()
         
         if self.match_toks(['=', '+=', '-=', '*=']):
           op = self.consume_cur()
@@ -563,7 +563,7 @@ class Parser:
       type=type,
       pos=pos
     )
-  
+  '''
   def parse_import_ids(self):
     if self.match_tok('*'):
       return self.consume_cur()
@@ -591,17 +591,18 @@ class Parser:
 
     self.expect_and_consume(']', allow_on_new_line=True)
     return ids
+  '''
 
   def parse_import_node(self):
     pos = self.consume_cur().pos
     path = self.expect_and_consume('str')
-    self.expect_and_consume('import')
-    ids = self.parse_import_ids()
+    #self.expect_and_consume('import')
+    # ids = self.parse_import_ids()
 
     return self.make_node(
       'import_node',
       path=path,
-      ids=ids,
+      # ids=ids,
       pos=pos
     )
 
@@ -619,7 +620,7 @@ class Parser:
       case 'type':
         node = self.parse_type_decl_node()
       
-      case 'from':
+      case 'import':
         node = self.parse_import_node()
 
       case _:

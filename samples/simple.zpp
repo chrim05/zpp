@@ -1,2 +1,7 @@
+type Node = (data: i32, next: *Node)
+
 fn main(argc: u32, argv: **u8) -> i32:
-  return 0
+  x: Node = (data: 1, next: argv as *Node)
+  y: Node = *x.next
+
+  return x.data

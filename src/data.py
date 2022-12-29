@@ -1,4 +1,10 @@
-from utils import error
+from utils import error, has_infinite_recursive_layout
+
+RESERVED_SYMBOLS = [
+  'i8', 'i16', 'i32', 'i64',
+  'u8', 'u16', 'u32', 'u64',
+  'void'
+]
 
 indent_fmt = '  '
 
@@ -118,6 +124,9 @@ class MappedAst:
     return m
   
   def declare_symbol(self, id, sym, pos):
+    if id in RESERVED_SYMBOLS:
+      error(f'symbol `{id}` is reserved')
+
     if id in self.symbols:
       error(f'symbol `{id}` already declared', pos)
     
@@ -143,13 +152,12 @@ class MappedAst:
 class Symbol:
   def __init__(self, kind, **kwargs):
     assert kind.endswith('_sym')
-    assert 'is_imported' in kwargs
 
     self.__dict__ = kwargs
     self.kind = kind
   
   def __repr__(self):
-    return f'Symbol(`{self.kind}`, is_imported: {self.is_imported})\n  {self.node}'
+    return f'Symbol(`{self.kind}`)\n  {self.node}'
 
 class Proto:
   def __init__(self, kind, **kwargs):
@@ -195,28 +203,64 @@ class RealType:
   def is_struct(self):
     return self.kind == 'struct_rt'
   
-  def __eq__(self, obj):
+  def internal_eq(self, obj, in_progress_struct_rt_ids=[]):
     if not isinstance(obj, RealType):
       return False
     
-    return self.__dict__ == obj.__dict__
+    key = (id(self), id(obj))
+    
+    if self.is_struct() and obj.is_struct():
+      if key in in_progress_struct_rt_ids:
+        return True
+    else:
+      if self.kind != obj.kind:
+        return False
+      
+      match self.kind:
+        case 'ptr_rt':
+          return self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
 
-  def __repr__(self):
+        case _:
+          return self.__dict__ == obj.__dict__
+      
+    for (name1, rt1), (name2, rt2) in zip(self.fields.items(), obj.fields.items()):
+      if name1 != name2 or not rt1.internal_eq(rt2, in_progress_struct_rt_ids + [key]):
+        return False
+    
+    return True
+
+  def __eq__(self, obj):
+    return self.internal_eq(obj)
+
+  def internal_repr(self, in_progress_struct_rt_ids=[]):
     if self.is_numeric():
       return self.kind[:-3]
-
+    
     match self.kind:
       case 'ptr_rt':
-        return f'*{"mut " if self.is_mut else ""}{self.type}'
+        return f'*{"mut " if self.is_mut else ""}{self.type.internal_repr(in_progress_struct_rt_ids)}'
       
       case 'struct_rt':
-        return f'({", ".join(map(lambda field: f"{field[0]}: {field[1]}", self.fields.items()))})'
+        if id(self) in in_progress_struct_rt_ids:
+          return '(..)'
+
+        fields = ", ".join(
+          map(lambda field: f"{field[0]}: {field[1].internal_repr(in_progress_struct_rt_ids + [id(self)])}", self.fields.items())
+        )
+
+        return f'({fields})'
 
       case 'void_rt':
         return 'void'
+      
+      case 'placeholder_rt':
+        return '<placeholder_type>'
 
       case _:
         raise NotImplementedError()
+
+  def __repr__(self):
+    return self.internal_repr()
 
 class RealData:
   def __init__(self, realtype, **kwargs):
@@ -265,6 +309,9 @@ class ComparatorDict:
         return True
 
     return False
+  
+  def __len__(self):
+    return len(self.items)
 
   def remove_by_key(self, key):
     for i, (k, _) in enumerate(self.items):
