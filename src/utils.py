@@ -29,6 +29,8 @@ def has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids=[]):
   if id(realtype) in in_progres_struct_rt_ids:
     return True
 
-  for _, realtype in realtype.fields.items():
-    if has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids + [id(realtype)]):
+  for _, field_realtype in realtype.fields.items():
+    if has_infinite_recursive_layout(field_realtype, in_progres_struct_rt_ids + [id(realtype)]):
       return True
+  
+  return False

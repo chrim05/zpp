@@ -1,12 +1,13 @@
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
 from utils import error, has_infinite_recursive_layout, write_instance_content_to
+import llvmlite.ir as ll
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
 
 class Generator:
   def __init__(self, map):
     self.maps = [map]
-    self.output = []
+    self.output = ll.Module()
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
     self.namedtypes_in_evaluation = ComparatorDict()
@@ -194,7 +195,7 @@ class Generator:
 
   def evaluate_id(self, id_tok):
     sym = self.map.get_symbol(id_tok.value, id_tok.pos)
-    llvm_data = self.cur_builder.load(sym.llvm_alloca, typ=self.convert_realtype_to_llvmtype(sym.realtype))
+    llvm_data = self.llvm_load(self.cur_builder, sym.llvm_alloca, self.convert_realtype_to_llvmtype(sym.realtype))
     
     return RealData(
       sym.realtype,
@@ -328,22 +329,28 @@ class Generator:
       error(f'struct `{instance_realdata.realtype}` has no field `{field_name}`', dot_node.pos)
 
     field_index = list(instance_realdata.realtype.fields.keys()).index(field_name)
+    realtype = instance_realdata.realtype.fields[field_name]
 
     if isinstance(instance_realdata.llvm_data, ll.LoadInstr):
       self.cur_builder.remove(instance_realdata.llvm_data)
       instance_realdata.llvm_data = instance_realdata.llvm_data.operands[0]
 
-      llvm_data = self.cur_builder.load(self.cur_builder.gep(
-        instance_realdata.llvm_data,
-        [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), field_index)],
-        inbounds=True,
-        resulting_type=self.convert_realtype_to_llvmtype(instance_realdata.realtype.fields[field_name])
-      ), typ=self.convert_realtype_to_llvmtype(instance_realdata.realtype.fields[field_name]))
+      llvm_data = self.llvm_load(self.cur_builder,
+        self.llvm_gep(
+          self.cur_builder,
+          instance_realdata.llvm_data,
+          [ll.Constant(ll.IntType(32), field_index)],
+          True,
+          (t := self.convert_realtype_to_llvmtype(realtype))
+        ),
+        t
+      )
     else:
-      llvm_data = self.cur_builder.extract_value(instance_realdata.llvm_data, field_index)
+      resulting_llvm_type = self.convert_realtype_to_llvmtype(realtype)
+      llvm_data = self.llvm_extract_value(self.cur_builder, instance_realdata.llvm_data, field_index, resulting_llvm_type)
 
     return RealData(
-      instance_realdata.realtype.fields[field_name],
+      realtype,
       llvm_data=llvm_data
     )
   
@@ -361,7 +368,8 @@ class Generator:
     llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), ll.Undefined)
 
     for i, field_realdata in enumerate(field_realdatas):
-      llvm_data = self.cur_builder.insert_value(llvm_data, field_realdata.llvm_data, i)
+      real_expected_value_llvm_type = self.convert_realtype_to_llvmtype(field_realdata.realtype)
+      llvm_data = self.llvm_insert_value(self.cur_builder, llvm_data, field_realdata.llvm_data, i, real_expected_value_llvm_type)
 
     return RealData(
       realtype,
@@ -423,7 +431,7 @@ class Generator:
 
         return RealData(
           realdata_expr.realtype.type,
-          llvm_data=self.cur_builder.load(realdata_expr.llvm_data, typ=self.convert_realtype_to_llvmtype(realdata_expr.realtype.type))
+          llvm_data=self.llvm_load(self.cur_builder, realdata_expr.llvm_data, self.convert_realtype_to_llvmtype(realdata_expr.realtype.type))
         )
       
       case _:
@@ -447,9 +455,9 @@ class Generator:
 
     self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
 
-    llvm_alloca = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
+    llvm_alloca = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
 
-    self.cur_builder.store(realdata.llvm_data, llvm_alloca, typ=typ)
+    self.llvm_store(self.cur_builder, realdata.llvm_data, llvm_alloca)
 
     sym = Symbol(
       'local_var_sym',
@@ -535,7 +543,7 @@ class Generator:
 
     self.expect_realtype(cur_fn_ret_type, expr.realtype, return_node.expr.pos)
 
-    self.cur_builder.ret(expr.llvm_data)
+    self.llvm_ret(self.cur_builder, expr.llvm_data, self.convert_realtype_to_llvmtype(cur_fn_ret_type))
   
   def evaluate_generics_in_call(self, generic_type_nodes):
     return list(map(lambda node: self.evaluate_type(node), generic_type_nodes))
@@ -562,7 +570,7 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
     llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
-    llvm_call = self.cur_builder.call(llvmfn, llvm_args)
+    llvm_call = self.llvm_call(self.cur_builder, llvmfn, llvm_args)
 
     return RealData(
       proto.ret_type,
@@ -623,8 +631,8 @@ class Generator:
   def create_tmp_alloca_for_expraddr(self, realdata_expr):
     self.tmp_counter += 1
 
-    tmp = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(realdata_expr.realtype), name=f'tmp.{self.tmp_counter}')
-    self.cur_builder.store(realdata_expr.llvm_data, tmp, typ=typ)
+    tmp = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realdata_expr.realtype), name=f'tmp.{self.tmp_counter}')
+    self.llvm_store(self.cur_builder, realdata_expr.llvm_data, tmp)
 
     return tmp
 
@@ -721,13 +729,13 @@ class Generator:
 
     llvm_rexpr = {
       '=': lambda: realdata_rexpr.llvm_data,
-      '+=': lambda: self.cur_builder.add(self.cur_builder.load(realdata_lexpr.llvm_data), realdata_rexpr.llvm_data),
-      '-=': lambda: self.cur_builder.sub(self.cur_builder.load(realdata_lexpr.llvm_data), realdata_rexpr.llvm_data),
-      '*=': lambda: self.cur_builder.mul(self.cur_builder.load(realdata_lexpr.llvm_data), realdata_rexpr.llvm_data),
+      '+=': lambda: self.cur_builder.add(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
+      '-=': lambda: self.cur_builder.sub(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
+      '*=': lambda: self.cur_builder.mul(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
     }[assignment_node.op.kind]()
 
     if not is_discard:
-      self.cur_builder.store(llvm_rexpr, realdata_lexpr.llvm_data, typ=self.convert_realtype_to_llvmtype(realdata_lexpr.realtype))
+      self.llvm_store(self.cur_builder, llvm_rexpr, realdata_lexpr.llvm_data)
 
   def evaluate_stmt(self, stmt):
     try:
@@ -757,7 +765,7 @@ class Generator:
     
     match realtype.kind:
       case 'ptr_rt':
-        return ll.OpaquePointer()
+        return ll.PointerType(ll.IntType(1))
 
       case 'struct_rt':
         return ll.LiteralStructType(list(map(
@@ -797,12 +805,52 @@ class Generator:
 
   def pop_builder(self):
     self.llvm_builders.pop()
+  
+  def llvm_load(self, builder, ptr, resulting_llvm_type):
+    ptr = builder.bitcast(ptr, ll.PointerType(resulting_llvm_type))
+    return builder.load(ptr)
+  
+  def llvm_gep(self, builder, ptr, indices, inbounds, resulting_llvm_type):
+    resulting_llvm_type = ll.PointerType(resulting_llvm_type)
+    ptr = builder.bitcast(ptr, resulting_llvm_type)
+    return builder.gep(ptr, indices, inbounds=inbounds)
+  
+  def llvm_insert_value(self, builder, agg, value, idx, real_expected_value_llvm_type):
+    if isinstance(value.type, ll.PointerType):
+      value = builder.bitcast(value, real_expected_value_llvm_type)
+
+    return builder.insert_value(agg, value, idx)
+  
+  def llvm_extract_value(self, builder, agg, idx, resulting_llvm_type):
+    r = builder.extract_value(agg, idx)
+
+    if isinstance(resulting_llvm_type, ll.PointerType):
+      r = builder.bitcast(r, resulting_llvm_type)
+    
+    return r
+  
+  def llvm_ret(self, builder, value, real_expected_value_llvm_type):
+    if isinstance(value.type, ll.PointerType):
+      value = builder.bitcast(value, real_expected_value_llvm_type)
+
+    return builder.ret(value)
+  
+  def llvm_store(self, builder, value, ptr):
+    ptr = builder.bitcast(ptr, ll.PointerType(value.type))
+    return builder.store(value, ptr)
+  
+  def llvm_call(self, builder, fn, args):
+    for i, arg in enumerate(args):
+      if isinstance(arg.type, ll.PointerType):
+        args[i] = builder.bitcast(arg, fn.ftype.args[i])
+
+    return builder.call(fn, args)
 
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
       llvm_alloca = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
 
-      self.cur_builder.store(self.cur_fn[1].args[i], llvm_alloca, typ=typ)
+      self.llvm_store(self.cur_builder, self.cur_fn[1].args[i], llvm_alloca)
 
       sym = Symbol(
         'local_var_sym',
@@ -898,10 +946,10 @@ class Generator:
   
   def remove_dead_blocks(self):
     for i, block in enumerate(self.cur_fn[1].blocks):
-      if self.cur_fn[1].entry_basic_block == block:
+      if block == self.cur_fn[1].entry_basic_block:
         continue
 
-      if block.is_dead_block:
+      if block.is_dead:
         self.cur_fn[1].blocks.pop(i)
   
   def fix_ret_terminator(self, has_terminator, fn_pos):
@@ -912,7 +960,7 @@ class Generator:
       self.cur_builder.ret_void()
       return
 
-    if self.cur_builder.block.is_dead_block:
+    if self.cur_builder.block.is_dead:
       return
 
     error('not all paths return a value', fn_pos)

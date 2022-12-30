@@ -492,7 +492,7 @@ class Parser:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
           return self.parse_var_decl()
         
-        stmt = self.parse_expr() if self.match_tok('..', allow_on_new_line=True) is None else self.consume_cur()
+        stmt = self.parse_expr() if not self.match_tok('..', allow_on_new_line=True) else self.consume_cur()
         
         if self.match_toks(['=', '+=', '-=', '*=']):
           op = self.consume_cur()
