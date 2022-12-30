@@ -1,7 +1,9 @@
+-- 3
+
 fn main(argc: u32, argv: **u8) -> i32:
   if argc == 1:
-    return 1
+    return 3
   elif argc == 2:
-    return 2
+    return 1
   else:
     return 0

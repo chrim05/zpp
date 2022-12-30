@@ -1,3 +1,5 @@
+-- 1
+
 type Node = (data: i32, next: *Node)
 
 fn main(argc: u32, argv: **u8) -> i32:

@@ -1,3 +1,5 @@
+-- 0
+
 type Person = (name: *u8, age: u8)
 
 fn main(argc: u32, argv: **u8) -> i32:

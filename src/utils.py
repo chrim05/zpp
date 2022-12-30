@@ -1,7 +1,5 @@
 from posixpath import abspath
 
-cache = {}
-
 def error(msg, pos):
   if pos is None:
     exit(f'error: {msg}')

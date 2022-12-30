@@ -339,11 +339,11 @@ class Generator:
         self.llvm_gep(
           self.cur_builder,
           instance_realdata.llvm_data,
-          [ll.Constant(ll.IntType(32), field_index)],
+          [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), field_index)],
           True,
-          (t := self.convert_realtype_to_llvmtype(realtype))
+          self.convert_realtype_to_llvmtype(instance_realdata.realtype)
         ),
-        t
+        self.convert_realtype_to_llvmtype(realtype)
       )
     else:
       resulting_llvm_type = self.convert_realtype_to_llvmtype(realtype)
@@ -810,9 +810,9 @@ class Generator:
     ptr = builder.bitcast(ptr, ll.PointerType(resulting_llvm_type))
     return builder.load(ptr)
   
-  def llvm_gep(self, builder, ptr, indices, inbounds, resulting_llvm_type):
-    resulting_llvm_type = ll.PointerType(resulting_llvm_type)
-    ptr = builder.bitcast(ptr, resulting_llvm_type)
+  def llvm_gep(self, builder, ptr, indices, inbounds, real_expected_value_llvm_type):
+    real_expected_value_llvm_type = ll.PointerType(real_expected_value_llvm_type)
+    ptr = builder.bitcast(ptr, real_expected_value_llvm_type)
     return builder.gep(ptr, indices, inbounds=inbounds)
   
   def llvm_insert_value(self, builder, agg, value, idx, real_expected_value_llvm_type):
