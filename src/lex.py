@@ -2,7 +2,7 @@ from data import Node
 from utils import error
 
 SKIPPABLE = [' ', '\n', '\t']
-DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=']
+DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=', '!=', '<=', '>=']
 KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',

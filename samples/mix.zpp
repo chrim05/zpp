@@ -1,0 +1,12 @@
+-- 314
+
+fn main(argc: u32, argv: **u8) -> i32:
+  count: u32 = 0
+
+  for .., argc > 1, argc -= 1:
+    arg: *u8 = argv[argc - 1]
+
+    for i: u64 = 0, arg[i] != null, i += 1:
+      count += arg[i] as u32
+
+  return count as i32

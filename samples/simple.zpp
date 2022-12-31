@@ -1,2 +1,8 @@
 fn main(argc: u32, argv: **u8) -> i32:
-  return 0
+  if argc > 1:
+    if argc == 2:
+      return 1
+    else:
+      return 0
+  else:
+    return 4

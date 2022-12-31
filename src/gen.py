@@ -280,14 +280,14 @@ class Generator:
     realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER)
     realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER)
 
-    self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
-    self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
-
     if realdata_left.realtype_is_coercable():
       realdata_left.realtype = realdata_right.realtype
 
     if realdata_right.realtype_is_coercable():
       realdata_right.realtype = realdata_left.realtype
+
+    self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
+    self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
 
     if realdata_left.is_comptime_value() and realdata_right.is_comptime_value():
       self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
@@ -1007,8 +1007,8 @@ class Generator:
     self.declare_parameters(proto, fn.node.args)
     has_terminator = self.evaluate_block(fn.node.body)
     llvmbuilder_allocas.branch(llvmfn_entry_bb)
-    self.fix_ret_terminator(has_terminator, fn.node.pos)
     self.remove_dead_blocks()
+    self.fix_ret_terminator(has_terminator, fn.node.pos)
 
     self.pop_builder()
     self.pop_scope()
@@ -1021,12 +1021,13 @@ class Generator:
     return r
   
   def remove_dead_blocks(self):
-    for i, block in enumerate(self.cur_fn[1].blocks):
-      if block == self.cur_fn[1].entry_basic_block:
-        continue
+    alive_blocks = []
 
-      if block.is_dead:
-        self.cur_fn[1].blocks.pop(i)
+    for block in self.cur_fn[1].blocks:
+      if not block.is_dead():
+        alive_blocks.append(block)
+    
+    self.cur_fn[1].blocks = alive_blocks
   
   def fix_ret_terminator(self, has_terminator, fn_pos):
     if has_terminator:
@@ -1036,7 +1037,7 @@ class Generator:
       self.cur_builder.ret_void()
       return
 
-    if self.cur_builder.block.is_dead:
+    if self.cur_builder.block.is_dead():
       return
 
     error('not all paths return a value', fn_pos)
