@@ -69,7 +69,10 @@ class Generator:
         'u8': RealType('u8_rt'),
         'u16': RealType('u16_rt'),
         'u32': RealType('u32_rt'),
-        'u64': RealType('u64_rt')
+        'u64': RealType('u64_rt'),
+
+        'f32': RealType('f32_rt'),
+        'f64': RealType('f64_rt')
       }[name]
     except KeyError:
       pass
@@ -152,9 +155,23 @@ class Generator:
     realtype = \
       realtype_to_use \
         if realtype_to_use is not None else \
-          self.ctx if self.ctx.is_int() else RealType('i32_rt')
+          self.ctx if self.ctx.is_numeric() else RealType('i32_rt')
 
-    value = int(num_tok.value)
+    value = (float if realtype.is_float() else int)(num_tok.value)
+    
+    return RealData(
+      realtype,
+      value=value,
+      llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realtype), value)
+    )
+
+  def evaluate_fnum(self, fnum_tok, realtype_to_use=None):
+    realtype = \
+      realtype_to_use \
+        if realtype_to_use is not None else \
+          self.ctx if self.ctx.is_float() else RealType('f32_rt')
+
+    value = float(fnum_tok.value)
     
     return RealData(
       realtype,
@@ -207,8 +224,8 @@ class Generator:
       sym.realtype,
       llvm_data=llvm_data
     )
-
-  def generate_llvm_bin(self, realdata_left, op, realdata_right):
+  
+  def generate_llvm_bin_for_int(self, realdata_left, op, realdata_right, realtype_resulting_from_cmp):
     is_signed = realdata_left.realtype.is_signed
     
     match op.kind:
@@ -218,10 +235,42 @@ class Generator:
       case '/': return getattr(self.cur_builder, 'sdiv' if is_signed else 'udiv')(realdata_left.llvm_data, realdata_right.llvm_data)
 
       case '==' | '!=' | '<' | '>' | '<=' | '>=':
-        return getattr(self.cur_builder, 'icmp_signed' if is_signed else 'icmp_unsigned')(op.kind, realdata_left.llvm_data, realdata_right.llvm_data)
+        return self.llvm_icmp(
+          self.cur_builder,
+          is_signed,
+          op.kind,
+          realdata_left.llvm_data,
+          realdata_right.llvm_data,
+          self.convert_realtype_to_llvmtype(realtype_resulting_from_cmp)
+        )
 
       case _:
         raise NotImplementedError()
+  
+  def generate_llvm_bin_for_float(self, realdata_left, op, realdata_right, realtype_resulting_from_cmp):
+    match op.kind:
+      case '+': return self.cur_builder.fadd(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '-': return self.cur_builder.fsub(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '*': return self.cur_builder.fmul(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '/': return self.cur_builder.fdiv(realdata_left.llvm_data, realdata_right.llvm_data)
+
+      case '==' | '!=' | '<' | '>' | '<=' | '>=':
+        return self.llvm_fcmp(
+          self.cur_builder,
+          op.kind,
+          realdata_left.llvm_data,
+          realdata_right.llvm_data,
+          self.convert_realtype_to_llvmtype(realtype_resulting_from_cmp)
+        )
+
+      case _:
+        raise NotImplementedError()
+
+  def generate_llvm_bin(self, realdata_left, op, realdata_right, realtype_resulting_from_cmp):
+    if realdata_left.realtype.is_float():
+      return self.generate_llvm_bin_for_float(realdata_left, op, realdata_right, realtype_resulting_from_cmp)
+    
+    return self.generate_llvm_bin_for_int(realdata_left, op, realdata_right, realtype_resulting_from_cmp)
 
   def compute_comptime_bin(self, realdata_left, op, realdata_right):
     match op.kind:
@@ -276,7 +325,15 @@ class Generator:
     
     error(f'expected integer expression, got `{realdata.realtype}`', pos)
 
+  def ctx_if_int_or(self, alternative_rt):
+    return self.ctx if self.ctx.is_int() else alternative_rt
+
   def evaluate_bin_node(self, bin_node):
+    get_resulting_realtype_of_bin_expr = lambda realdata: \
+      realdata.realtype \
+        if bin_node.op.kind not in ['==', '!=', '<', '>', '<=', '<='] else \
+          self.ctx_if_int_or(RealType('u8_rt'))
+  
     realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER)
     realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER)
 
@@ -291,14 +348,15 @@ class Generator:
 
     if realdata_left.is_comptime_value() and realdata_right.is_comptime_value():
       self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
+      is_float = realdata_left.realtype.is_float()
 
-      return self.evaluate_num(
+      return (self.evaluate_fnum if is_float else self.evaluate_num)(
         Node(
-          'num',
+          'fnum' if is_float else 'num',
           value=str(self.compute_comptime_bin(realdata_left, bin_node.op, realdata_right)),
           pos=bin_node.pos
         ),
-        realtype_to_use=realdata_left.realtype
+        realtype_to_use=get_resulting_realtype_of_bin_expr(realdata_left)
       )
     
     if realdata_left.is_comptime_value():
@@ -314,8 +372,8 @@ class Generator:
 
     self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
 
-    realtype = realdata_left.realtype
-    llvm_data = self.generate_llvm_bin(realdata_left, bin_node.op, realdata_right)
+    realtype = get_resulting_realtype_of_bin_expr(realdata_left)
+    llvm_data = self.generate_llvm_bin(realdata_left, bin_node.op, realdata_right, realtype)
 
     return RealData(
       realtype,
@@ -447,17 +505,26 @@ class Generator:
   def make_numeric_cast(self, realdata_expr, target_rt):
     source_bits = realdata_expr.realtype.bits
     target_bits = target_rt.bits
-
-    if source_bits == target_bits and realdata_expr.realtype.is_signed == target_rt.is_signed:
-      return
-    
+    llvm_target_type = self.convert_realtype_to_llvmtype(target_rt)
     is_signed = realdata_expr.realtype.is_signed
-    llvm_caster = getattr(self.cur_builder, 'sext' if is_signed else 'zext') if source_bits < target_bits else self.cur_builder.trunc
+    is_signed_target_rt = target_rt.is_signed
+
+    if realdata_expr.realtype == target_rt:
+      return
+
+    if realdata_expr.realtype.is_float() and target_rt.is_float():
+      llvm_caster = self.cur_builder.fpext if source_bits < target_bits else self.cur_builder.fptrunc
+    elif realdata_expr.realtype.is_float():
+      llvm_caster = self.cur_builder.fptosi if is_signed_target_rt else self.cur_builder.fptoui
+    elif target_rt.is_float():
+      llvm_caster = self.cur_builder.sitofp if is_signed else self.cur_builder.uitofp
+    else:
+      llvm_caster = getattr(self.cur_builder, 'sext' if is_signed else 'zext') if source_bits < target_bits else self.cur_builder.trunc
 
     realdata_expr.realtype = target_rt
     realdata_expr.llvm_data = llvm_caster(
       realdata_expr.llvm_data,
-      self.convert_realtype_to_llvmtype(target_rt)
+      llvm_target_type
     )
   
   def evaluate_as_node(self, as_node):
@@ -545,14 +612,14 @@ class Generator:
     llvm_exit_block = self.cur_fn[1].append_basic_block('exit_block')
 
     cond_rd = self.evaluate_node(if_node.if_branch.cond, RealType('u8_rt'))
-    self.expect_realdata_is_numeric(cond_rd, if_node.if_branch.cond.pos)
+    self.expect_realdata_is_integer(cond_rd, if_node.if_branch.cond.pos)
 
     false_br = llvm_block_elif_condcheckers[0] if len(llvm_block_elif_branches) > 0 else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
     if cond_rd.is_comptime_value():
       self.cur_builder.branch(llvm_block_if_branch if cond_rd.value else false_br)
     else:
-      self.cur_builder.cbranch(cond_rd.llvm_data, llvm_block_if_branch, false_br)
+      self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_if_branch, false_br)
 
     self.push_sub_scope()
     self.push_builder(ll.IRBuilder(llvm_block_if_branch))
@@ -565,14 +632,14 @@ class Generator:
       self.push_builder(ll.IRBuilder(llvm_block_elif_condcheckers[i]))
 
       cond_rd = self.evaluate_node(elif_branch.cond, RealType('u8_rt'))
-      self.expect_realdata_is_numeric(cond_rd, elif_branch.cond.pos)
+      self.expect_realdata_is_integer(cond_rd, elif_branch.cond.pos)
 
       false_br = llvm_block_elif_condcheckers[i + 1] if i + 1 < len(llvm_block_elif_branches) else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
       if cond_rd.is_comptime_value():
         self.cur_builder.branch(llvm_block_elif_branches[i] if cond_rd.value else false_br)
       else:
-        self.cur_builder.cbranch(cond_rd.llvm_data, llvm_block_elif_branches[i], false_br)
+        self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_elif_branches[i], false_br)
 
       self.pop_builder()
       
@@ -654,12 +721,12 @@ class Generator:
     self.cur_builder = ll.IRBuilder(llvm_block_check)
 
     cond_rd = self.evaluate_node(while_node.cond, RealType('u8_rt'))
-    self.expect_realdata_is_numeric(cond_rd, while_node.cond.pos)
+    self.expect_realdata_is_integer(cond_rd, while_node.cond.pos)
 
     if cond_rd.is_comptime_value():
       self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
     else:
-      self.cur_builder.cbranch(cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
+      self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
 
     self.push_sub_scope()
     self.push_builder(ll.IRBuilder(llvm_block_loop))
@@ -753,12 +820,12 @@ class Generator:
     self.cur_builder = ll.IRBuilder(llvm_block_mid)
 
     cond_rd = self.evaluate_node(for_node.mid_node, RealType('u8_rt'))
-    self.expect_realdata_is_numeric(cond_rd, for_node.mid_node.pos)
+    self.expect_realdata_is_integer(cond_rd, for_node.mid_node.pos)
 
     if cond_rd.is_comptime_value():
       self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
     else:
-      self.cur_builder.cbranch(cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
+      self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
 
     self.push_builder(ll.IRBuilder(llvm_block_loop))
     self.push_loop((llvm_block_right, llvm_block_exit))
@@ -831,6 +898,13 @@ class Generator:
     if realtype.is_int():
       return ll.IntType(realtype.bits)
     
+    if realtype.is_float():
+      return {
+        16: ll.HalfType(),
+        32: ll.FloatType(),
+        64: ll.DoubleType(),
+      }[realtype.bits]
+    
     match realtype.kind:
       case 'ptr_rt':
         return ll.PointerType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids))
@@ -862,11 +936,15 @@ class Generator:
         raise NotImplementedError()
 
   def create_llvm_function(self, fn_name, proto):
-    return ll.Function(
+    llvm_fn = ll.Function(
       self.output,
       self.convert_proto_to_llvmproto(proto),
       fn_name
     )
+
+    llvm_fn.linkage = 'private' if fn_name != 'main' else 'external'
+
+    return llvm_fn
 
   def push_ctx(self, realtype):
     self.ctx_types.append(realtype)
@@ -911,6 +989,26 @@ class Generator:
 
     return builder.ret(value)
   
+  def llvm_cbranch(self, builder, cond, truebr, falsebr):
+    return builder.cbranch(
+      builder.trunc(cond, ll.IntType(1)),
+      truebr,
+      falsebr
+    )
+  
+  def llvm_icmp(self, builder, is_signed, op, value1, value2, llvm_type_the_result_should_be):
+    llvm_fn = builder.icmp_signed if is_signed else builder.icmp_unsigned
+    return builder.zext(
+      llvm_fn(op, value1, value2),
+      llvm_type_the_result_should_be
+    )
+  
+  def llvm_fcmp(self, builder, op, value1, value2, llvm_type_the_result_should_be):
+    return builder.zext(
+      builder.fcmp_ordered(op, value1, value2),
+      llvm_type_the_result_should_be
+    )
+
   def llvm_store(self, builder, value, ptr):
     ptr = builder.bitcast(ptr, ll.PointerType(value.type))
     return builder.store(value, ptr)

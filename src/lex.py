@@ -104,13 +104,27 @@ class Lexer:
   def collect_word(self):
     t = ''
     p = self.cur_pos
+    is_digit = self.cur.isdigit()
+    is_ident = not is_digit
 
-    while self.has_char and (self.cur.isalnum() or self.cur == '_'):
+    while self.has_char and (
+      self.cur.isalnum() or
+      (is_digit and self.cur in ["'", '.']) or
+      (is_ident and self.cur == '_')
+    ):
       t += self.cur
       self.advance()
     
     self.advance(-1)
-    kind = 'num' if t[0].isdigit() else t if t in KEYWORDS else 'id'
+
+    if is_digit:
+      if ".'" in t or "'." in t or t.endswith("'") or t.endswith('.'):
+        error('malformed num', p)
+
+      kind = 'fnum' if '.' in t else 'num'
+      t = t.replace("'", '')
+    else:
+      kind = t if t in KEYWORDS else 'id'
 
     return self.make_tok(
       kind,

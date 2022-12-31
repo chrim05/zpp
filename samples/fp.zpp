@@ -1,7 +1,5 @@
 -- 0
 
--- todo and or not
-
 fn main(argc: u32, argv: **u8) -> i32:
   x: f32 = 1.2
   y: i32 = (x + 0.8) as i32
