@@ -1,2 +1,4 @@
+-- 0
+
 fn main(argc: u32, argv: **u8) -> i32:
-  return 0
+  return not argc as i32

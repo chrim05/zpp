@@ -1,0 +1,11 @@
+-- 3
+
+fn main(argc: u32, argv: **u8) -> i32:
+  a: u8 = true
+  b: u8 = true
+  c: u8 = false
+
+  if a and b and c:
+    return 2
+
+  return 3

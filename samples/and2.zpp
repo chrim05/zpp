@@ -1,0 +1,9 @@
+-- 0
+
+fn main(argc: u32, argv: **u8) -> i32:
+  n: u8 = true
+
+  if false and n:
+    return 1
+  
+  return 0

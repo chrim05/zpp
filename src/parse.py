@@ -264,7 +264,7 @@ class Parser:
       case '[':
         term = self.parses_array_init_node(term.pos)
     
-      case '+' | '-' | '&' | '*':
+      case '+' | '-' | '&' | '*' | 'not':
         op = term
         is_mut = (self.consume_tok_if_match('mut') is not None) if op.kind == '&' else None
         expr = self.parse_term()
@@ -369,9 +369,13 @@ class Parser:
 
   def parse_expr(self):
     return self.parse_bin(
-      ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
-        ['+', '-'], lambda: self.parse_bin(
-          ['*', '/'], lambda: self.parse_large_term()
+      ['or'], lambda: self.parse_bin(
+        ['and'], lambda: self.parse_bin(
+          ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
+            ['+', '-'], lambda: self.parse_bin(
+              ['*', '/'], lambda: self.parse_large_term()
+            )
+          )
         )
       )
     )

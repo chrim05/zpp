@@ -7,7 +7,8 @@ KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
   'return', 'true', 'false', 'null', 'type',
   'as', 'while', 'break', 'continue', 'mut',
-  'for', 'undefined', 'import'
+  'for', 'undefined', 'import', 'and', 'or',
+  'not'
 ]
 
 class Lexer:
@@ -118,7 +119,7 @@ class Lexer:
     self.advance(-1)
 
     if is_digit:
-      if ".'" in t or "'." in t or t.endswith("'") or t.endswith('.'):
+      if ".'" in t or "'." in t or "''" in t or '..' in t or t.endswith("'") or t.endswith('.'):
         error('malformed num', p)
 
       kind = 'fnum' if '.' in t else 'num'

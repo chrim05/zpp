@@ -328,7 +328,118 @@ class Generator:
   def ctx_if_int_or(self, alternative_rt):
     return self.ctx if self.ctx.is_int() else alternative_rt
 
+  def evaluate_andor_node(self, bin_node):
+    def restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder):
+      self.cur_fn[1].remove_basic_block(llvm_block_left_is_true)
+      self.cur_fn[1].remove_basic_block(llvm_block_left_is_false)
+      self.cur_builder = old_builder
+
+      if previous_builder_maxindex is None:
+        return
+
+      for _ in range(previous_builder_maxindex, len(self.cur_builder.block.instructions)):
+        self.cur_builder.remove(self.cur_builder.block.instructions[-1])
+
+    is_and = bin_node.op.kind == 'and'
+
+    llvm_block_left_is_true = self.cur_fn[1].append_basic_block('left_is_true_branch' if is_and else 'left_is_false_branch')
+    llvm_block_left_is_false = self.cur_fn[1].append_basic_block('left_is_false_branch' if is_and else 'left_is_true_branch')
+
+    previous_builder_maxindex = len(self.cur_builder.block.instructions)
+    realdata_left = self.evaluate_node(bin_node.left, self.ctx_if_int_or(RealType('u8_rt')))
+    self.llvm_cbranch(
+      self.cur_builder,
+      realdata_left.llvm_data,
+      llvm_block_left_is_true if is_and else llvm_block_left_is_false,
+      llvm_block_left_is_false if is_and else llvm_block_left_is_true
+    )
+
+    old_builder = self.cur_builder
+    llvm_block_phi_init = self.cur_builder.block
+    self.cur_builder = ll.IRBuilder(llvm_block_left_is_true)
+    realdata_right = self.evaluate_node(bin_node.right, self.ctx_if_int_or(RealType('u8_rt')))
+    self.cur_builder.branch(llvm_block_left_is_false)
+
+    if realdata_left.realtype_is_coercable():
+      realdata_left.realtype = realdata_right.realtype
+
+    if realdata_right.realtype_is_coercable():
+      realdata_right.realtype = realdata_left.realtype
+    
+    self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
+    self.expect_realdata_is_integer(realdata_left, bin_node.left.pos)
+    self.expect_realdata_is_integer(realdata_right, bin_node.right.pos)
+
+    realtype = realdata_left.realtype
+    llvm_type = self.convert_realtype_to_llvmtype(realtype)
+
+    if realdata_left.is_comptime_value() and realdata_right.is_comptime_value():
+      restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
+
+      return self.evaluate_num(
+        Node(
+          'num',
+          value=str(realdata_left.value and realdata_right.value) if is_and else str(realdata_left.value or realdata_right.value),
+          pos=bin_node.pos
+        ),
+        realtype_to_use=realtype
+      )
+    elif realdata_left.is_comptime_value():
+      if not is_and and realdata_left.value == 1:
+        restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
+        
+        return RealData(
+          realtype,
+          value=1,
+          llvm_data=ll.Constant(llvm_type, 1)
+        )
+
+      if is_and and realdata_left.value == 0:
+        restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
+
+        return RealData(
+          realtype,
+          value=0,
+          llvm_data=ll.Constant(llvm_type, 0)
+        )
+    elif realdata_right.is_comptime_value():
+      if not is_and and realdata_right.value == 1:
+        self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
+
+        return RealData(
+          realtype,
+          value=1,
+          llvm_data=ll.Constant(llvm_type, 1)
+        )
+
+      if is_and and realdata_right.value == 0:
+        self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
+
+        return RealData(
+          realtype,
+          value=0,
+          llvm_data=ll.Constant(llvm_type, 0)
+        )
+
+    self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
+
+    llvm_data = self.llvm_phi(
+      self.cur_builder, [
+        (ll.Constant(llvm_type, 0 if is_and else 1), llvm_block_phi_init),
+        (realdata_right.llvm_data, llvm_block_left_is_true)
+      ],
+      llvm_type
+    )
+
+    return RealData(
+      realtype,
+      llvm_data=llvm_data
+    )
+
   def evaluate_bin_node(self, bin_node):
+    if bin_node.op.kind in ['and', 'or']:
+      return self.evaluate_andor_node(bin_node)
+
     get_resulting_realtype_of_bin_expr = lambda realdata: \
       realdata.realtype \
         if bin_node.op.kind not in ['==', '!=', '<', '>', '<=', '<='] else \
@@ -559,6 +670,9 @@ class Generator:
     match unary_node.op.kind:
       case '&':
         return self.evaluate_reference_node(unary_node)
+      
+      case 'not':
+        return self.evaluate_not_node(unary_node)
     
       case '*':
         realdata_expr = self.evaluate_node(unary_node.expr, self.ctx)
@@ -770,6 +884,26 @@ class Generator:
     self.llvm_store(self.cur_builder, realdata_expr.llvm_data, tmp)
 
     return tmp
+
+  def evaluate_not_node(self, unary_node):
+    realdata_expr = self.evaluate_node(unary_node.expr, self.ctx_if_int_or(RealType('u8_rt')))
+    self.expect_realdata_is_integer(realdata_expr, unary_node.expr.pos)
+
+    if realdata_expr.is_comptime_value():
+      return RealData(
+        realdata_expr.realtype,
+        value=(new_value := not realdata_expr.value),
+        llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realdata_expr.realtype), new_value),
+      )
+
+    return RealData(
+      realdata_expr.realtype,
+      llvm_data=self.llvm_not(
+        self.cur_builder,
+        realdata_expr.llvm_data,
+        self.convert_realtype_to_llvmtype(realdata_expr.realtype)
+      )
+    )
 
   def evaluate_reference_node(self, unary_node):
     realdata_expr = self.evaluate_node(unary_node.expr, REALTYPE_PLACEHOLDER)
@@ -1007,6 +1141,20 @@ class Generator:
     return builder.zext(
       builder.fcmp_ordered(op, value1, value2),
       llvm_type_the_result_should_be
+    )
+
+  def llvm_phi(self, builder, incomings, llvm_type_the_resulting_should_be):
+    p = builder.phi(llvm_type_the_resulting_should_be)
+
+    for incoming in incomings:
+      p.add_incoming(*incoming)
+
+    return p
+
+  def llvm_not(self, builder, value, llvm_type_the_resulting_should_be):
+    return builder.zext(
+      builder.icmp_signed('==', value, ll.Constant(llvm_type_the_resulting_should_be, 0)),
+      llvm_type_the_resulting_should_be
     )
 
   def llvm_store(self, builder, value, ptr):
