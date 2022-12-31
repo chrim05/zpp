@@ -1,0 +1,4 @@
+-- 97
+
+fn main(argc: u32, argv: **u8) -> i32:
+  return argv[argc - 1][0] as i32

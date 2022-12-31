@@ -104,11 +104,20 @@ class Node:
       case 'continue_node':
         return 'continue'
       
+      case 'index_node':
+        return f'({self.instance_expr})[{self.index_expr}]'
+      
       case 'assignment_node':
         return f'{self.lexpr} {self.op} {self.rexpr}'
       
       case 'dot_node':
         return f'{self.left_expr}.{self.right_expr}'
+      
+      case 'array_type_node':
+        return f'[{self.length} x {self.type}]'
+      
+      case 'array_init_node':
+        return f'{self.nodes}'
 
       case _:
         return f'<repr `{self.value}`>'
@@ -193,9 +202,15 @@ class RealType:
   
   def is_void(self):
     return self.kind == 'void_rt'
+  
+  def is_static_array(self):
+    return self.kind == 'static_array_rt'
+
+  def is_float(self):
+    return self.kind in ['f32_rt', 'f64_rt']
 
   def is_numeric(self):
-    return self.is_int()
+    return self.is_int() or self.is_float()
 
   def is_ptr(self):
     return self.kind == 'ptr_rt'
@@ -219,6 +234,9 @@ class RealType:
       match self.kind:
         case 'ptr_rt':
           return self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
+        
+        case 'static_array_rt':
+          return self.length == obj.length and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
 
         case _:
           return self.__dict__ == obj.__dict__
@@ -249,6 +267,9 @@ class RealType:
         )
 
         return f'({fields})'
+
+      case 'static_array_rt':
+        return f'[{self.length} x {self.type.internal_repr(in_progress_struct_rt_ids)}]'
 
       case 'void_rt':
         return 'void'

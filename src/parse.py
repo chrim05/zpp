@@ -77,6 +77,23 @@ class Parser:
       is_mut = self.consume_tok_if_match('mut') is not None
       return self.make_node('ptr_type_node', is_mut=is_mut, type=self.parse_type(), pos=pos)
     
+    if self.match_tok('['):
+      pos = self.consume_cur().pos
+      length = self.parse_expr()
+      i = self.expect_and_consume('id')
+
+      if i.value != 'x':
+        error('expected token `x`', i.pos)
+      
+      type = self.parse_type()
+      self.expect_and_consume(']')
+      return self.make_node(
+        'array_type_node',
+        length=length,
+        type=type,
+        pos=pos
+      )
+    
     if self.match_tok('('):
       pos = self.consume_cur().pos
       fields = self.parse_struct_fields()
@@ -217,6 +234,25 @@ class Parser:
     self.index = old_index
     
     return r
+  
+  def parses_array_init_node(self, pos):
+    nodes = []
+
+    while True:
+      nodes.append(self.parse_expr())
+
+      if not self.match_tok(','):
+        break
+      
+      self.advance()
+
+    self.expect_and_consume(']', allow_on_new_line=True)
+    
+    return self.make_node(
+      'array_init_node',
+      nodes=nodes,
+      pos=pos
+    )
 
   def parse_term(self):
     term = self.consume_cur()
@@ -224,6 +260,9 @@ class Parser:
     match term.kind:
       case 'num' | 'id' | 'true' | 'false' | 'null' | 'undefined':
         pass
+    
+      case '[':
+        term = self.parses_array_init_node(term.pos)
     
       case '+' | '-' | '&' | '*':
         op = term
@@ -255,7 +294,13 @@ class Parser:
       is_internal_call = self.consume_tok_if_match('!') is not None
       term = self.parse_call_node(term, is_internal_call)
     
-    while self.match_toks(['.', '->'], allow_on_new_line=True):
+    while self.match_toks(['.', '->', '['], allow_on_new_line=True):
+      if self.cur.kind == '[':
+        pos = self.consume_cur().pos
+        term = self.make_node('index_node', instance_expr=term, index_expr=self.parse_expr(), pos=pos)
+        self.expect_and_consume(']')
+        continue
+
       dot_tok = self.consume_cur()
       left_expr = term if dot_tok.kind == '.' else self.make_node(
         'unary_node',

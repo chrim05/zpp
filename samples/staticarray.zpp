@@ -1,0 +1,8 @@
+-- 6
+
+fn main(argc: u32, argv: **u8) -> i32:
+  a: [3 x i32] = [1, 2, 3]
+  b: *[3 x i32] = &a
+  c: *i32 = b as *i32
+  
+  return a[0] + (*b)[1] + c[2]

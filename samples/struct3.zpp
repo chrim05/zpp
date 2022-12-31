@@ -1,0 +1,11 @@
+-- 7
+
+type K = (m: i32, n: i32)
+type T = (a: i32, b: (k: i32, w: *K))
+
+fn main(argc: u32, argv: **u8) -> i32:
+  t: K = (m: 2, n: 3)
+  x: T = (a: 0, b: (k: 1, w: &t))
+  y: *T = &x
+
+  return y->b.k + (y->b.w->m * y->b.w->n)

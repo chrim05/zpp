@@ -1,4 +1,4 @@
--- 0
+-- 10
 
 fn main(argc: u32, argv: **u8) -> i32:
   i: u32 = 0

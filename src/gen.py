@@ -104,6 +104,12 @@ class Generator:
       case 'ptr_type_node':
         r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False))
       
+      case 'array_type_node':
+        length = self.evaluate_node(type_node.length, RealType('u64_rt'))
+        self.expect_realdata_is_comptime_value(length, type_node.pos)
+        self.expect_realdata_is_integer(length, type_node.pos)
+        r = RealType('static_array_rt', length=length.value, type=self.evaluate_type(type_node.type, is_top_call=False))
+      
       case 'struct_type_node':
         field_names = list(map(lambda field: field.name.value, type_node.fields))
 
@@ -252,6 +258,24 @@ class Generator:
     
     error(f'expected numeric expression, got `{realdata.realtype}`', pos)
 
+  def expect_realdata_is_indexable(self, realdata, pos):
+    if realdata.realtype.is_ptr() or realdata.realtype.is_static_array():
+      return
+    
+    error(f'expected indexable expression, got `{realdata.realtype}`', pos)
+
+  def expect_realdata_is_comptime_value(self, realdata, pos):
+    if realdata.is_comptime_value():
+      return
+    
+    error(f'expected comptime expression', pos)
+
+  def expect_realdata_is_integer(self, realdata, pos):
+    if realdata.realtype.is_int():
+      return
+    
+    error(f'expected integer expression, got `{realdata.realtype}`', pos)
+
   def evaluate_bin_node(self, bin_node):
     realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER)
     realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER)
@@ -340,14 +364,58 @@ class Generator:
           self.cur_builder,
           instance_realdata.llvm_data,
           [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), field_index)],
-          True,
-          self.convert_realtype_to_llvmtype(instance_realdata.realtype)
+          True
         ),
         self.convert_realtype_to_llvmtype(realtype)
       )
     else:
       resulting_llvm_type = self.convert_realtype_to_llvmtype(realtype)
       llvm_data = self.llvm_extract_value(self.cur_builder, instance_realdata.llvm_data, field_index, resulting_llvm_type)
+
+    return RealData(
+      realtype,
+      llvm_data=llvm_data
+    )
+  
+  def evaluate_index_node(self, index_node):
+    instance_realdata = self.evaluate_node(index_node.instance_expr, REALTYPE_PLACEHOLDER)
+    index_realdata = self.evaluate_node(index_node.index_expr, RealType('u64_rt'))
+
+    self.expect_realdata_is_indexable(instance_realdata, index_node.instance_expr.pos)
+    self.expect_realdata_is_integer(index_realdata, index_node.index_expr.pos)
+
+    indices = [index_realdata.llvm_data]
+
+    if instance_realdata.realtype.is_static_array():
+      self.cur_builder.remove(instance_realdata.llvm_data)
+      instance_realdata.llvm_data = instance_realdata.llvm_data.operands[0]
+      indices.insert(0, ll.Constant(ll.IntType(64), 0))
+
+    llvm_data = self.llvm_load(
+      self.cur_builder,
+      self.llvm_gep(
+        self.cur_builder,
+        instance_realdata.llvm_data,
+        indices,
+        False
+      ),
+      self.convert_realtype_to_llvmtype(instance_realdata.realtype.type)
+    )
+
+    return RealData(
+      instance_realdata.realtype.type,
+      llvm_data=llvm_data
+    )
+  
+  def evaluate_array_init_node(self, init_node):
+    ctx_realtype = self.ctx.type if self.ctx.is_static_array() else REALTYPE_PLACEHOLDER
+    realdatas = [self.evaluate_node(node, ctx_realtype) for node in init_node.nodes]
+    realtype = RealType('static_array_rt', length=len(init_node.nodes), type=realdatas[0].realtype)
+    element_llvm_type = self.convert_realtype_to_llvmtype(realtype.type)
+    llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), ll.Undefined)
+
+    for i, realdata in enumerate(realdatas):
+      llvm_data = self.llvm_insert_value(self.cur_builder, llvm_data, realdata.llvm_data, i, element_llvm_type)
 
     return RealData(
       realtype,
@@ -759,17 +827,23 @@ class Generator:
     
     return self.cur_builder.block.is_terminated
 
-  def convert_realtype_to_llvmtype(self, realtype):
+  def convert_realtype_to_llvmtype(self, realtype, in_progress_struct_rd_ids=[]):
     if realtype.is_int():
       return ll.IntType(realtype.bits)
     
     match realtype.kind:
       case 'ptr_rt':
-        return ll.PointerType(ll.IntType(1))
+        return ll.PointerType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids))
+      
+      case 'static_array_rt':
+        return ll.ArrayType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids), realtype.length)
 
       case 'struct_rt':
+        if id(realtype) in in_progress_struct_rd_ids:
+          return ll.IntType(1)
+
         return ll.LiteralStructType(list(map(
-          lambda field: self.convert_realtype_to_llvmtype(field[1]),
+          lambda field: self.convert_realtype_to_llvmtype(field[1], in_progress_struct_rd_ids + [id(realtype)]),
           realtype.fields.items()
         )))
 
@@ -810,9 +884,11 @@ class Generator:
     ptr = builder.bitcast(ptr, ll.PointerType(resulting_llvm_type))
     return builder.load(ptr)
   
-  def llvm_gep(self, builder, ptr, indices, inbounds, real_expected_value_llvm_type):
-    real_expected_value_llvm_type = ll.PointerType(real_expected_value_llvm_type)
-    ptr = builder.bitcast(ptr, real_expected_value_llvm_type)
+  def llvm_gep(self, builder, ptr, indices, inbounds, real_expected_value_llvm_type=None):
+    if real_expected_value_llvm_type is not None:
+      real_expected_value_llvm_type = ll.PointerType(real_expected_value_llvm_type)
+      ptr = builder.bitcast(ptr, real_expected_value_llvm_type)
+
     return builder.gep(ptr, indices, inbounds=inbounds)
   
   def llvm_insert_value(self, builder, agg, value, idx, real_expected_value_llvm_type):

@@ -7,7 +7,7 @@ def error(msg, pos):
   line, col, src, path = pos
   lines = src.split('\n')
 
-  print(f'{path} [line: {line}, col: {col}]: {msg}')
+  print(f'"{path}" [line: {line}, col: {col}]: {msg}')
   print(f'+ {lines[line - 1]}')
   exit(f'+ {" " * (col - 1)}^')
 

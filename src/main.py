@@ -24,16 +24,22 @@ def compile(path):
   return src, toks, ast, mapped_ast, llvmir
 
 def run_tests():
+  fail = lambda mapped_ast, llvmir, msg: (
+    print(msg),
+    print(mapped_ast, end='-----------\n\n'),
+    exit(llvmir),
+  )
+
   for elem in listdir('samples'):
+    if elem == 'simple.zpp':
+      continue
+
     elem = f'samples/{elem}'
     if not isfile(elem) or not elem.endswith('.zpp'):
       continue
 
-    print(f"[+] compiling '{elem}'")
+    print(f"[+] testing '{elem}' => ", end='')
     src, _, _, mapped_ast, llvmir = compile(getabspath(elem))
-
-    print(mapped_ast, end='-----------\n\n')
-    print(llvmir)
 
     expected_exitcode = src.split('\n')[0].strip('- ')
     expected_exitcode = int(expected_exitcode) if expected_exitcode != '' else None
@@ -42,13 +48,15 @@ def run_tests():
     with open(f'{tmp_folder}/a.ll', 'w') as f:
       f.write(repr(llvmir))
     
-    if (exitcode := system(f'clang {tmp_folder}/a.ll -o {tmp_folder}/a.exe')) != 0:
-      exit(f'[!] error clang, exitcode: {exitcode}')
+    if (exitcode := system(f'clang -Wno-override-module {tmp_folder}/a.ll -o {tmp_folder}/a.exe')) != 0:
+      fail(mapped_ast, llvmir, f'clang error, exitcode: {exitcode}')
     
     if expected_exitcode is None:
-      print('[?] skipped runtime: loop')
-    elif (exitcode := system(f'{tmp_folder}/a.exe')) != expected_exitcode:
-      exit(f'[!] runtime error, (expected: {expected_exitcode}, got: {exitcode})')
+      print('skipped runtime')
+    elif (exitcode := system(f'{tmp_folder}/a.exe arg')) != expected_exitcode:
+      fail(mapped_ast, llvmir, f'runtime error, (expected: {expected_exitcode}, got: {exitcode})')
+    else:
+      print('passed')
 
 def main():
   if len(argv) == 2:
@@ -58,8 +66,6 @@ def main():
     
     path = getabspath(argv[1])
     _, _, _, mapped_ast, llvmir = compile(path)
-    
-    print(mapped_ast)
 
     with open(path + '.ll', 'w') as f:
       f.write(repr(llvmir))
