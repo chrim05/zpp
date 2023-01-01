@@ -3,6 +3,11 @@ from utils import error, has_infinite_recursive_layout, write_instance_content_t
 import llvmlite.ir as ll
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
+CSTRING_REALTYPE = RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
+STRING_REALTYPE = RealType('struct_rt', fields={
+  'ptr': CSTRING_REALTYPE,
+  'len': RealType('u64_rt')
+})
 
 class Generator:
   def __init__(self, map):
@@ -15,6 +20,8 @@ class Generator:
     self.ctx_types = []
     self.loops = []
     self.tmp_counter = 0
+    self.str_counter = 0
+    self.strings = {}
   
   @property
   def map(self) -> MappedAst:
@@ -72,7 +79,9 @@ class Generator:
         'u64': RealType('u64_rt'),
 
         'f32': RealType('f32_rt'),
-        'f64': RealType('f64_rt')
+        'f64': RealType('f64_rt'),
+
+        'void': RealType('void_rt')
       }[name]
     except KeyError:
       pass
@@ -97,12 +106,14 @@ class Generator:
 
     return r
 
-  def evaluate_type(self, type_node, is_top_call=True):
+  def evaluate_type(self, type_node, is_top_call=True, allow_void_type=False):
     match type_node.kind:
       case 'id':
         t = self.evaluate_builtin_type(type_node.value)
-
         r = t if t is not None else self.evaluate_named_type(type_node)
+
+        if r.is_void() and not allow_void_type:
+          error('type `void` not allowed here', type_node.pos)
       
       case 'ptr_type_node':
         r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False))
@@ -137,7 +148,7 @@ class Generator:
 
   def evaluate_fn_proto(self, fn_node):
     arg_types = [self.evaluate_type(arg.type) for arg in fn_node.args]
-    ret_type = self.evaluate_type(fn_node.ret_type)
+    ret_type = self.evaluate_type(fn_node.ret_type, allow_void_type=True)
 
     return self.make_proto(
       'fn_proto',
@@ -155,7 +166,7 @@ class Generator:
     realtype = \
       realtype_to_use \
         if realtype_to_use is not None else \
-          self.ctx if self.ctx.is_numeric() else RealType('i32_rt')
+          self.ctx if self.ctx.is_numeric() else REALTYPE_PLACEHOLDER
 
     value = (float if realtype.is_float() else int)(num_tok.value)
     
@@ -169,7 +180,7 @@ class Generator:
     realtype = \
       realtype_to_use \
         if realtype_to_use is not None else \
-          self.ctx if self.ctx.is_float() else RealType('f32_rt')
+          self.ctx if self.ctx.is_float() else REALTYPE_PLACEHOLDER
 
     value = float(fnum_tok.value)
     
@@ -180,16 +191,15 @@ class Generator:
     )
 
   def evaluate_undefined(self, dd_node):
-    if self.ctx.kind == 'placeholder_rt':
-      error('undefined term has no clear type here', dd_node.pos)
+    realtype = self.ctx
 
     return RealData(
-      self.ctx,
-      value=None,
-      llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(self.ctx), ll.Undefined)
+      realtype,
+      value=0,
+      llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realtype), ll.Undefined)
     )
 
-  def evaluate_node(self, node, new_ctx):
+  def evaluate_node(self, node, new_ctx, is_stmt=False, is_top_call=True):
     if new_ctx is not None:
       self.push_ctx(new_ctx)
     
@@ -197,6 +207,12 @@ class Generator:
 
     if new_ctx is not None:
       self.pop_ctx()
+
+    if not is_stmt and t.realtype.is_void():
+      error('expression not allowed to be `void`', node.pos)
+    
+    if is_top_call and t.realtype.kind == 'placeholder_rt':
+      error('expression has no clear type here', node.pos)
 
     return t
 
@@ -346,7 +362,7 @@ class Generator:
     llvm_block_left_is_false = self.cur_fn[1].append_basic_block('left_is_false_branch' if is_and else 'left_is_true_branch')
 
     previous_builder_maxindex = len(self.cur_builder.block.instructions)
-    realdata_left = self.evaluate_node(bin_node.left, self.ctx_if_int_or(RealType('u8_rt')))
+    realdata_left = self.evaluate_node(bin_node.left, self.ctx_if_int_or(RealType('u8_rt')), is_top_call=False)
     self.llvm_cbranch(
       self.cur_builder,
       realdata_left.llvm_data,
@@ -357,7 +373,7 @@ class Generator:
     old_builder = self.cur_builder
     llvm_block_phi_init = self.cur_builder.block
     self.cur_builder = ll.IRBuilder(llvm_block_left_is_true)
-    realdata_right = self.evaluate_node(bin_node.right, self.ctx_if_int_or(RealType('u8_rt')))
+    realdata_right = self.evaluate_node(bin_node.right, self.ctx_if_int_or(RealType('u8_rt')), is_top_call=False)
     self.cur_builder.branch(llvm_block_left_is_false)
 
     if realdata_left.realtype_is_coercable():
@@ -366,9 +382,9 @@ class Generator:
     if realdata_right.realtype_is_coercable():
       realdata_right.realtype = realdata_left.realtype
     
-    self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
     self.expect_realdata_is_integer(realdata_left, bin_node.left.pos)
     self.expect_realdata_is_integer(realdata_right, bin_node.right.pos)
+    self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
 
     realtype = realdata_left.realtype
     llvm_type = self.convert_realtype_to_llvmtype(realtype)
@@ -445,8 +461,8 @@ class Generator:
         if bin_node.op.kind not in ['==', '!=', '<', '>', '<=', '<='] else \
           self.ctx_if_int_or(RealType('u8_rt'))
   
-    realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER)
-    realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER)
+    realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER, is_top_call=False)
+    realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER, is_top_call=False)
 
     if realdata_left.realtype_is_coercable():
       realdata_left.realtype = realdata_right.realtype
@@ -548,6 +564,9 @@ class Generator:
   
   def evaluate_index_node(self, index_node):
     instance_realdata = self.evaluate_node(index_node.instance_expr, REALTYPE_PLACEHOLDER)
+    return self.internal_evaluate_index_node(index_node, instance_realdata)
+
+  def internal_evaluate_index_node(self, index_node, instance_realdata):
     index_realdata = self.evaluate_node(index_node.index_expr, RealType('u64_rt'))
 
     self.expect_realdata_is_indexable(instance_realdata, index_node.instance_expr.pos)
@@ -575,10 +594,13 @@ class Generator:
       instance_realdata.realtype.type,
       llvm_data=llvm_data
     )
-  
+
   def evaluate_array_init_node(self, init_node):
-    ctx_realtype = self.ctx.type if self.ctx.is_static_array() else REALTYPE_PLACEHOLDER
-    realdatas = [self.evaluate_node(node, ctx_realtype) for node in init_node.nodes]
+    if self.ctx.is_static_array():
+      realdatas = self.evaluate_array_init_nodes(init_node, self.ctx.type)
+    else:
+      realdatas = self.evaluate_array_init_nodes(init_node, REALTYPE_PLACEHOLDER)
+
     realtype = RealType('static_array_rt', length=len(init_node.nodes), type=realdatas[0].realtype)
     element_llvm_type = self.convert_realtype_to_llvmtype(realtype.type)
     llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), ll.Undefined)
@@ -590,6 +612,22 @@ class Generator:
       realtype,
       llvm_data=llvm_data
     )
+
+  def evaluate_array_init_nodes(self, init_node, ctx_type_for_the_first_node):
+    realdatas = []
+    
+    for i, node in enumerate(init_node.nodes):
+      is_first_node = i == 0
+
+      realdatas.append(rd := self.evaluate_node(
+        node,
+        ctx_type_for_the_first_node if is_first_node else realdatas[0].realtype
+      ))
+
+      if not is_first_node:
+        self.expect_realtype(rd.realtype, realdatas[0].realtype, node.pos)
+
+    return realdatas
   
   def evaluate_struct_init_node(self, init_node):
     field_names = list(map(lambda field: field.name.value, init_node.fields))
@@ -660,6 +698,9 @@ class Generator:
   def is_deref_node(self, node):
     return node.kind == 'unary_node' and node.op.kind == '*'
 
+  def is_index_node(self, node):
+    return node.kind == 'index_node'
+
   def expect_realdata_is_ptr(self, realdata, pos):
     if realdata.realtype.is_ptr():
       return
@@ -675,7 +716,7 @@ class Generator:
         return self.evaluate_not_node(unary_node)
     
       case '*':
-        realdata_expr = self.evaluate_node(unary_node.expr, self.ctx)
+        realdata_expr = self.evaluate_node(unary_node.expr, RealType('ptr_rt', is_mut=False, type=self.ctx))
         self.expect_realdata_is_ptr(realdata_expr, unary_node.expr.pos)
 
         return RealData(
@@ -857,12 +898,14 @@ class Generator:
 
   def evaluate_true(self, node):
     return self.evaluate_num(
-      Node('num', value='1', pos=node.pos)
+      Node('num', value='1', pos=node.pos),
+      realtype_to_use=self.ctx_if_int_or(RealType('u8_rt'))
     )
 
   def evaluate_false(self, node):
     return self.evaluate_num(
-      Node('num', value='0', pos=node.pos)
+      Node('num', value='0', pos=node.pos),
+      realtype_to_use=self.ctx_if_int_or(RealType('u8_rt'))
     )
 
   def evaluate_continue_node_stmt(self, continue_node):
@@ -906,7 +949,7 @@ class Generator:
     )
 
   def evaluate_reference_node(self, unary_node):
-    realdata_expr = self.evaluate_node(unary_node.expr, REALTYPE_PLACEHOLDER)
+    realdata_expr = self.evaluate_node(unary_node.expr, self.ctx.type if self.ctx.is_ptr() else REALTYPE_PLACEHOLDER)
 
     if isinstance(realdata_expr.llvm_data, ll.LoadInstr):
       self.cur_builder.remove(realdata_expr.llvm_data)
@@ -921,13 +964,24 @@ class Generator:
 
     return realdata_expr
 
-  def evaluate_assignment_leftexpr_node(self, expr_node):
+  def evaluate_assignment_leftexpr_node(self, expr_node, assign_tok_pos):
     is_deref = self.is_deref_node(expr_node)
+    is_index = self.is_index_node(expr_node)
 
-    if is_deref:
+    if is_index:
+      old_expr_node = expr_node
+      expr_node = expr_node.instance_expr
+    elif is_deref:
       expr_node = expr_node.expr
 
     realdata_expr = self.evaluate_node(expr_node, REALTYPE_PLACEHOLDER)
+
+    if is_index:
+      if realdata_expr.realtype.is_ptr() and not realdata_expr.realtype.is_mut:
+        error('cannot write at specific index to unmutable pointer', assign_tok_pos)
+      
+      expr_node = old_expr_node
+      realdata_expr = self.internal_evaluate_index_node(expr_node, realdata_expr)
     
     if not isinstance(realdata_expr.llvm_data, ll.LoadInstr):
       error('cannot assign a value to an expression', expr_node.pos)
@@ -984,7 +1038,7 @@ class Generator:
   def evaluate_assignment_node_stmt(self, assignment_node):
     is_discard = assignment_node.lexpr.kind == '..'
 
-    realdata_lexpr = self.evaluate_assignment_leftexpr_node(assignment_node.lexpr) if not is_discard else None
+    realdata_lexpr = self.evaluate_assignment_leftexpr_node(assignment_node.lexpr, assignment_node.pos) if not is_discard else None
     realdata_rexpr = self.evaluate_node(assignment_node.rexpr, realdata_lexpr.realtype.type if not is_discard else REALTYPE_PLACEHOLDER)
 
     if not is_discard:
@@ -1010,7 +1064,7 @@ class Generator:
     try:
       attr = getattr(self, f'evaluate_{stmt.kind}_stmt')
     except AttributeError:
-      realdata = self.evaluate_node(stmt, REALTYPE_PLACEHOLDER)
+      realdata = self.evaluate_node(stmt, REALTYPE_PLACEHOLDER, is_stmt=True)
 
       if not realdata.realtype.is_void():
         error(f'undiscarded expression of type `{realdata.realtype}` as statement', stmt.pos)
@@ -1018,6 +1072,44 @@ class Generator:
       return
     
     attr(stmt)
+  
+  def evaluate_chr(self, tok):
+    return self.evaluate_num(
+      Node(
+        'num',
+        value=str(ord(tok.value)),
+        pos=tok.pos
+      ),
+      realtype_to_use=self.ctx_if_int_or(RealType('u8_rt'))
+    )
+
+  def evaluate_str(self, tok):
+    if tok.value not in self.strings:
+      self.str_counter += 1
+      llvm_data = self.strings[tok.value] = ll.GlobalVariable(
+        self.output,
+        t := ll.ArrayType(ll.IntType(8), len(tok.value)),
+        f'str.{self.str_counter}'
+      )
+
+      llvm_data.initializer = ll.Constant(t, bytearray(tok.value.encode('ascii')))
+    else:
+      llvm_data = self.strings[tok.value]
+
+    if self.ctx == CSTRING_REALTYPE:
+      return RealData(
+        CSTRING_REALTYPE,
+        llvm_data=llvm_data
+      )
+    
+    agg = ll.Constant(self.convert_realtype_to_llvmtype(STRING_REALTYPE), ll.Undefined)
+    llvm_data = self.llvm_insert_value(self.cur_builder, agg, llvm_data, 0, self.convert_realtype_to_llvmtype(CSTRING_REALTYPE))
+    llvm_data = self.llvm_insert_value(self.cur_builder, llvm_data, ll.Constant(ll.IntType(64), len(tok.value)), 1, ll.IntType(64))
+
+    return RealData(
+      STRING_REALTYPE,
+      llvm_data=llvm_data
+    )
 
   def evaluate_block(self, block):
     for stmt in block:
@@ -1043,6 +1135,9 @@ class Generator:
       case 'ptr_rt':
         return ll.PointerType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids))
       
+      case 'void_rt':
+        return ll.VoidType()
+      
       case 'static_array_rt':
         return ll.ArrayType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids), realtype.length)
 
@@ -1054,6 +1149,9 @@ class Generator:
           lambda field: self.convert_realtype_to_llvmtype(field[1], in_progress_struct_rd_ids + [id(realtype)]),
           realtype.fields.items()
         )))
+
+      case 'placeholder_rt':
+        return ll.IntType(2)
 
       case _:
         raise NotImplementedError()
@@ -1320,7 +1418,7 @@ def check_main_proto(main_proto, main_pos):
   
   if main_proto.arg_types != [
     RealType('u32_rt'),
-    RealType('ptr_rt', is_mut=False, type=RealType('ptr_rt', is_mut=False, type=RealType('u8_rt')))
+    RealType('ptr_rt', is_mut=False, type=CSTRING_REALTYPE)
   ]:
     throw_error()
 

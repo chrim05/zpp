@@ -233,7 +233,7 @@ class RealType:
       
       match self.kind:
         case 'ptr_rt':
-          return self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
+          return self.is_mut == obj.is_mut and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
         
         case 'static_array_rt':
           return self.length == obj.length and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)

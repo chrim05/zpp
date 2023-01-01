@@ -119,11 +119,22 @@ class Lexer:
     self.advance(-1)
 
     if is_digit:
-      if ".'" in t or "'." in t or "''" in t or '..' in t or t.endswith("'") or t.endswith('.'):
+      new_t = t.replace("'", '')
+
+      try:
+        _ = float(new_t)
+        failed_parsing = False
+      except ValueError:
+        failed_parsing = True
+
+      if (
+        ".'" in t or "'." in t or "''" in t or t.count('.') > 1 or
+        t.endswith("'") or t.endswith('.') or failed_parsing
+      ): 
         error('malformed num', p)
 
       kind = 'fnum' if '.' in t else 'num'
-      t = t.replace("'", '')
+      t = new_t
     else:
       kind = t if t in KEYWORDS else 'id'
 
@@ -153,17 +164,48 @@ class Lexer:
 
     return self.make_tok(k, value=k, pos=p)
 
-  def collect_str(self):
+  def get_escaped_char_value(self, c):
+    try:
+      return {
+        'n': '\n',
+        't': '\t',
+        '0': '\0',
+        "'": "'",
+        '"': '"'
+      }[c]
+    except KeyError:
+      error('unknown escaped char', self.cur_pos)
+
+  def collect_str_or_chr(self):
     p = self.cur_pos
+    apex = self.cur
+    is_str = apex == '"'
+    kind = 'str' if is_str else 'chr'
     self.advance()
     t = ''
 
-    while self.has_char and (self.cur != "'" or self.bck == '\\'):
-      t += self.cur
+    while self.has_char and self.cur != apex:
+      c = self.cur
+
+      if self.cur == '\\':
+        self.advance()
+
+        if not self.has_char:
+          break
+        
+        c = self.get_escaped_char_value(self.cur)
+
+      t += c
       self.advance()
     
+    if not self.has_char:
+      error(f'malformed {kind}', p)
+    
+    if not is_str and len(t) != 1:
+      error('malformed chr (1 character expected)', p)
+    
     return self.make_tok(
-      'str',
+      kind,
       value=t,
       pos=p
     )
@@ -176,8 +218,8 @@ class Lexer:
     
     if self.cur.isalnum() or self.cur == '_':
       t = self.collect_word()
-    elif self.cur == "'":
-      t = self.collect_str()
+    elif self.cur in ["'", '"']:
+      t = self.collect_str_or_chr()
     else:
       t = self.collect_punctuation()
     

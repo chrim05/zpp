@@ -258,7 +258,7 @@ class Parser:
     term = self.consume_cur()
 
     match term.kind:
-      case 'num' | 'fnum' | 'id' | 'true' | 'false' | 'null' | 'undefined':
+      case 'num' | 'fnum' | 'id' | 'true' | 'false' | 'null' | 'undefined' | 'str' | 'chr':
         pass
     
       case '[':

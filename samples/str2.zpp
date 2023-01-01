@@ -1,0 +1,14 @@
+-- 1116
+
+type String = (ptr: *u8, len: u64)
+
+fn hash_string(s: *String) -> u64:
+  result: u64 = 0
+
+  for i: u64 = 0, i < s->len, i += 1:
+    result += s->ptr[i] as u64
+  
+  return result
+
+fn main(argc: u32, argv: **u8) -> i32:
+  return hash_string(&"hello world") as i32

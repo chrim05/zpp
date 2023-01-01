@@ -1,6 +1,6 @@
 --
 
-import 'import.zpp'
+import "import.zpp"
 
 type Point = (x: i64, y: i64)
 
