@@ -8,7 +8,7 @@ KEYWORDS = [
   'return', 'true', 'false', 'null', 'type',
   'as', 'while', 'break', 'continue', 'mut',
   'for', 'undefined', 'import', 'and', 'or',
-  'not'
+  'not', 'try', 'out'
 ]
 
 class Lexer:

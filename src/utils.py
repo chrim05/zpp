@@ -32,3 +32,6 @@ def has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids=[]):
       return True
   
   return False
+
+def var_is_comptime(name):
+  return name[0].isupper()

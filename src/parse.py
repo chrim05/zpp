@@ -193,8 +193,7 @@ class Parser:
     return self.parse_type()
 
   def parse_bin(self, allow_left_on_new_line, ops, terms_parser_fn):
-    if not allow_left_on_new_line and self.cur.is_on_new_line:
-      error('expression not allowed to be on a new line', self.cur.pos)
+    self.throw_error_when_tok_on_new_line_and_not_allowed(allow_left_on_new_line)
 
     left = terms_parser_fn()
     
@@ -212,6 +211,19 @@ class Parser:
     
     return left
   
+  def parse_out_param(self):
+    pos = self.consume_cur().pos
+    name = self.expect_and_consume('id')
+    self.expect_and_consume(':')
+    type = self.parse_type()
+
+    return self.make_node(
+      'out_param_node',
+      name=name,
+      type=type,
+      pos=pos
+    )
+  
   def parse_call_node(self, node_to_call, is_internal_call):
     args = []
     pos = self.expect_and_consume('(').pos
@@ -221,7 +233,10 @@ class Parser:
       if len(args) == 0 and self.match_tok(')', allow_on_new_line=True):
         break
 
-      args.append(self.parse_expr())
+      if self.match_tok('out', allow_on_new_line=True):
+        args.append(self.parse_out_param())
+      else:
+        args.append(self.parse_expr())
 
       if not self.match_tok(','):
         break
@@ -364,13 +379,19 @@ class Parser:
       pos=pos
     )
 
-  def parse_large_term(self):
+  def parse_large_term(self, allow_left_on_new_line):
+    self.throw_error_when_tok_on_new_line_and_not_allowed(allow_left_on_new_line)
+
     term = self.parse_term()
 
     if self.match_tok('as'):
       term = self.parse_as_node(term)
     
     return term
+
+  def throw_error_when_tok_on_new_line_and_not_allowed(self, allow_left_on_new_line):
+    if not allow_left_on_new_line and self.cur.is_on_new_line:
+      error('expression not allowed to be on a new line', self.cur.pos)
   
   def parse_as_node(self, expr_node):
     pos = self.consume_cur().pos
@@ -395,7 +416,7 @@ class Parser:
         allow_left_on_new_line,['and'], lambda: self.parse_bin(
           allow_left_on_new_line, ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
             allow_left_on_new_line, ['+', '-'], lambda: self.parse_bin(
-              allow_left_on_new_line, ['*', '/'], lambda: self.parse_large_term()
+              allow_left_on_new_line, ['*', '/'], lambda: self.parse_large_term(allow_left_on_new_line)
             )
           )
         )
@@ -485,6 +506,37 @@ class Parser:
       pos=pos
     )
 
+  def parse_try_node(self):
+    pos = self.consume_cur().pos
+    var = None
+
+    if self.match_pattern(['id', ':']):
+      name = self.expect_and_consume('id')
+      self.expect_and_consume(':')
+      type = self.parse_type()
+      self.expect_and_consume('=')
+
+      var = self.make_node(
+        'var_try_node',
+        name=name,
+        type=type,
+        pos=name.pos
+      )
+
+    expr = self.parse_expr()
+    body = self.parse_block() if self.match_tok(':') else None
+
+    if var is not None and body is None:
+      error('var is not allowed when the try statement has no block', pos)
+
+    return self.make_node(
+      'try_node',
+      var=var,
+      expr=expr,
+      body=body,
+      pos=pos
+    )
+
   def parse_var_decl(self):
     name = self.expect_and_consume('id', allow_on_new_line=True)
     self.expect_and_consume(':')
@@ -558,6 +610,9 @@ class Parser:
 
       case 'for':
         return self.parse_for_node()
+      
+      case 'try':
+        return self.parse_try_node()
 
       case _:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
@@ -666,6 +721,9 @@ class Parser:
       
       case 'import':
         node = self.parse_import_node()
+      
+      case 'id':
+        node = self.parse_var_decl()
 
       case _:
         error('token invalid here', self.cur.pos)

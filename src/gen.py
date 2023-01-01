@@ -1,5 +1,5 @@
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
-from utils import error, has_infinite_recursive_layout, write_instance_content_to
+from utils import error, has_infinite_recursive_layout, var_is_comptime, write_instance_content_to
 import llvmlite.ir as ll
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
@@ -15,12 +15,14 @@ class Generator:
     self.output = ll.Module()
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
+    self.global_evaluated = []
     self.namedtypes_in_evaluation = ComparatorDict()
     self.llvm_builders = [] # the last one is the builder in use
     self.ctx_types = []
     self.loops = []
     self.tmp_counter = 0
     self.str_counter = 0
+    self.internal_vars = 0
     self.strings = {}
   
   @property
@@ -28,7 +30,7 @@ class Generator:
     return self.maps[-1]
 
   @property
-  def cur_fn(self) -> ll.Function:
+  def cur_fn(self):
     return list(self.fn_in_evaluation.values())[-1]
   
   @property
@@ -261,17 +263,52 @@ class Generator:
 
   def evaluate_null(self, null_tok):
     realtype = self.ctx if self.ctx.is_int() or self.ctx.is_ptr() else REALTYPE_PLACEHOLDER
-    llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), None if realtype.is_ptr() else 0)
+    llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), None)
     
     return RealData(
       realtype,
       value=0,
       llvm_data=llvm_data
     )
+  
+  def evaluate_global_sym(self, sym):
+    key = id(sym)
+
+    if key in self.global_evaluated:
+      return
+
+    var_decl_node = sym.node
+
+    self.push_scope()
+    realtype = self.evaluate_type(var_decl_node.type)
+    realdata = self.evaluate_node(var_decl_node.expr, realtype)
+    self.pop_scope()
+    
+    self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
+    self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)
+
+    if sym.is_comptime:
+      sym.realdata = realdata
+    else:
+      glob = ll.GlobalVariable(self.output, self.convert_realtype_to_llvmtype(realtype), var_decl_node.name.value)
+      glob.initializer = realdata.llvm_data
+      sym.realtype = realtype
+      sym.llvm_data = glob
+
+    self.global_evaluated.append(key)
 
   def evaluate_id(self, id_tok):
     sym = self.map.get_symbol(id_tok.value, id_tok.pos)
-    llvm_data = self.llvm_load(self.cur_builder, sym.llvm_alloca, self.convert_realtype_to_llvmtype(sym.realtype))
+
+    check_sym_is_local_or_global_var(id_tok, sym)
+
+    if sym.kind == 'global_var_sym':
+      self.evaluate_global_sym(sym)
+
+    if sym.is_comptime:
+      return sym.realdata
+    
+    llvm_data = self.llvm_load(self.cur_builder, sym.llvm_data, self.convert_realtype_to_llvmtype(sym.realtype))
     
     return RealData(
       sym.realtype,
@@ -279,7 +316,7 @@ class Generator:
     )
   
   def generate_llvm_bin_for_int(self, realdata_left, op, realdata_right, realtype_resulting_from_cmp):
-    is_signed = realdata_left.realtype.is_signed
+    is_signed = realdata_left.realtype.is_signed if realdata_left.realtype.is_numeric() else True
     
     match op.kind:
       case '+': return self.cur_builder.add(realdata_left.llvm_data, realdata_right.llvm_data)
@@ -365,6 +402,12 @@ class Generator:
       return
     
     error(f'expected numeric expression, got `{realdata.realtype}`', pos)
+
+  def expect_realdata_is_numeric_or_ptr(self, realdata, pos):
+    if realdata.realtype.is_numeric() or realdata.realtype.is_ptr():
+      return
+    
+    error(f'expected numeric or ptr expression, got `{realdata.realtype}`', pos)
 
   def expect_realdata_is_indexable(self, realdata, pos):
     if realdata.realtype.is_ptr() or realdata.realtype.is_static_array():
@@ -537,19 +580,23 @@ class Generator:
         realtype_to_use=self.ctx
       )
 
-    self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
-    self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
+    checker = \
+      self.expect_realdata_is_numeric_or_ptr \
+        if bin_node.op.kind in ['==', '!='] else \
+          self.expect_realdata_is_numeric
+
+    checker(realdata_left, bin_node.left.pos)
+    checker(realdata_right, bin_node.right.pos)
     
     if realdata_left.is_comptime_value():
       new_realtype = realdata_left.realtype = realdata_right.realtype
-      realdata_left.llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(new_realtype), realdata_left.llvm_data.constant)
+      llvm_constant = None if new_realtype.is_ptr() else realdata_left.llvm_data.constant
+      realdata_left.llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(new_realtype), llvm_constant)
     
     if realdata_right.is_comptime_value():
-      # if bin_node.op.kind in ['/', '%'] and realdata_right.value == 0:
-      #   error('dividing by `0`', bin_node.pos)
-
       new_realtype = realdata_right.realtype = realdata_left.realtype
-      realdata_right.llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(new_realtype), realdata_right.llvm_data.constant)
+      llvm_constant = None if new_realtype.is_ptr() else realdata_right.llvm_data.constant
+      realdata_right.llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(new_realtype), llvm_constant)
 
     self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
 
@@ -761,6 +808,62 @@ class Generator:
     
     error(f'expected pointer expression, got `{realdata.realtype}`', pos)
 
+  def evaluate_try_node_stmt(self, try_node):
+    def create_internal_var_name(pos):
+      self.internal_vars += 1
+      return Node('id', value=f'internal.{self.internal_vars}', pos=pos)
+
+    has_no_var = try_node.var is None
+
+    var_decl_node = Node(
+      'var_decl_node',
+      name=create_internal_var_name(try_node.expr.pos) if has_no_var else try_node.var.name,
+      type=self.cur_fn[0].ret_type if has_no_var else try_node.var.type,
+      expr=try_node.expr,
+      pos=try_node.pos if has_no_var else try_node.var.pos
+    )
+
+    return_node = Node('return_node', expr=var_decl_node.name, pos=try_node.pos)
+
+    if_node = Node(
+      'if_node',
+      if_branch=Node(
+        'if_branch_node',
+        cond=Node(
+          'bin_node',
+          left=var_decl_node.name, 
+          op=Node('!=', value='!=', pos=var_decl_node.name.pos),
+          right=Node('num', value=0, pos=var_decl_node.name.pos),
+          pos=var_decl_node.name.pos
+        ),
+        body=try_node.body if try_node.body is not None else [return_node],
+        pos=try_node.pos
+      ),
+      elif_branches=[],
+      else_branch=None,
+      pos=try_node.pos
+    )
+
+    self.evaluate_var_decl_node_stmt(var_decl_node, type_is_already_evaluated=has_no_var)
+    self.evaluate_if_node_stmt(if_node)
+  
+  def evaluate_out_param_node(self, out_node):
+    self.evaluate_var_decl_node_stmt(Node(
+      'var_decl_node',
+      name=out_node.name,
+      type=out_node.type,
+      expr=Node('undefined', value='undefined', pos=out_node.name.pos),
+      pos=out_node.name.pos
+    ))
+
+    return self.evaluate_unary_node(Node(
+      'unary_node',
+      op=Node('&', value='&', pos=out_node.pos),
+      is_mut=True,
+      expr=out_node.name,
+      pos=out_node.pos
+    ))
+
   def evaluate_unary_node(self, unary_node):
     match unary_node.op.kind:
       case '&':
@@ -793,20 +896,30 @@ class Generator:
 
         return realdata_expr
 
-  def evaluate_var_decl_node_stmt(self, var_decl_node):
-    realtype = self.evaluate_type(var_decl_node.type)
-    realdata = self.evaluate_node(var_decl_node.expr, realtype)
+  def evaluate_var_decl_node_stmt(self, var_decl_node, type_is_already_evaluated=False):
+    is_comptime = var_is_comptime(var_decl_node.name.value)
 
+    if type_is_already_evaluated:
+      realtype = var_decl_node.type
+    else:
+      realtype = self.evaluate_type(var_decl_node.type)
+
+    realdata = self.evaluate_node(var_decl_node.expr, realtype)
     self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
 
-    llvm_alloca = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
-
-    self.llvm_store(self.cur_builder, realdata.llvm_data, llvm_alloca)
+    if is_comptime:
+      self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)
+      llvm_data = realdata.llvm_data
+    else:
+      llvm_data = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(realtype), name=var_decl_node.name.value)
+      self.llvm_store(self.cur_builder, realdata.llvm_data, llvm_data)
 
     sym = Symbol(
       'local_var_sym',
+      is_comptime=is_comptime,
       realtype=realtype,
-      llvm_alloca=llvm_alloca
+      llvm_data=llvm_data,
+      realdata=realdata if is_comptime else None
     )
 
     self.map.declare_symbol(var_decl_node.name.value, sym, var_decl_node.name.pos)
@@ -1377,14 +1490,16 @@ class Generator:
 
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
-      llvm_alloca = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
+      llvm_data = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
 
-      self.llvm_store(self.cur_builder, self.cur_fn[1].args[i], llvm_alloca)
+      self.llvm_store(self.cur_builder, self.cur_fn[1].args[i], llvm_data)
 
       sym = Symbol(
         'local_var_sym',
+        is_comptime=False,
         realtype=arg_realtype,
-        llvm_alloca=llvm_alloca
+        llvm_data=llvm_data,
+        realdata=None
       )
 
       self.map.declare_symbol(arg_name.value, sym, arg_name.pos)
@@ -1524,6 +1639,12 @@ def check_sym_is_generic_type(name_tok, sym):
     return
 
   error(f'`{name_tok.value}` is not a generic type', name_tok.pos)
+
+def check_sym_is_local_or_global_var(name_tok, sym):
+  if sym.kind in ['local_var_sym', 'global_var_sym']:
+    return
+
+  error(f'`{name_tok.value}` is not a variable', name_tok.pos)
 
 def check_main_proto(main_proto, main_pos):
   throw_error = lambda: error('invalid `main` prototype', main_pos)

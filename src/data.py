@@ -9,6 +9,9 @@ RESERVED_SYMBOLS = [
 indent_fmt = '  '
 
 def repr_block(block):
+  if block is None:
+    return ''
+
   global indent_fmt
   
   indent_fmt += '  '
@@ -85,6 +88,15 @@ class Node:
       
       case 'struct_field_init_node':
         return f'{self.name.value}: {self.expr}'
+
+      case 'try_node':
+        return f'try {self.var if self.var is not None else ""}{self.expr}{repr_block(self.body)}'
+
+      case 'var_try_node':
+        return f'try {self.name.value}: {self.type} = '
+
+      case 'out_param_node':
+        return f'out {self.name.value}: {self.type}'
       
       case 'struct_field_node':
         return f'{self.name.value}: {self.type}'

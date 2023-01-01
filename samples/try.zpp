@@ -1,0 +1,28 @@
+-- 10
+
+Ok: u8 = 0
+Overflow: u8 = 1
+Underflow: u8 = 2
+
+-- there is a internal function for this (see `add_with_overflow`)
+fn add_with_overflow(|T| a: T, b: T, result: *mut T) -> u8:
+  *result = a + b
+
+  if a > 0 and b > 0 and *result < 0:
+    return Overflow
+
+  if a < 0 and b < 0 and *result > 0:
+    return Underflow
+  
+  -- everything worked
+  return Ok
+
+fn main(argc: u32, argv: **u8) -> i32:
+  try e: u8 = add_with_overflow(|i32| 2147483647, 2, out result: i32):
+    if e != Overflow and e != Underflow:
+      return -1
+    
+    return (e * 10) as i32
+  
+  return 0
+  

@@ -1,0 +1,11 @@
+-- 1
+
+-- returning true when ptr points to nothing
+fn is_dangling_ptr(ptr: *i32) -> u8:
+  return ptr == null
+
+fn main(argc: u32, argv: **u8) -> i32:
+  try is_dangling_ptr(null) as i32
+
+  return 0
+  
