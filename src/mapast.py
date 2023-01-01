@@ -29,7 +29,7 @@ def mapast_except_imports(ast_to_map):
       case 'type_decl_node':
         m.declare_symbol(
           glob.name.value,
-          Symbol('type_sym', node=glob),
+          Symbol('type_sym' if len(glob.generics) == 0 else 'generic_type_sym', node=glob),
           glob.pos
         )
       

@@ -1,0 +1,10 @@
+-- 3
+
+type Node[T] = (data: T, next: *Node[T])
+
+fn main(argc: u32, argv: **u8) -> i32:
+  b: Node[i32] = (data: 2, next: null)
+  a: Node[i32] = (data: 1, next: &b)
+  
+  return a.data + a.next->data
+  

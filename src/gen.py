@@ -91,8 +91,11 @@ class Generator:
 
     if sym.kind == 'alias_sym':
       return sym.realtype
+    
+    if sym.kind == 'generic_type_sym':
+      error(f'expected `{len(sym.node.generics)}` generic args, got `0`', type_node.pos)
 
-    check_sym_is_type(type_node.value, sym)
+    check_sym_is_type(type_node, sym)
 
     key = id(sym)
 
@@ -101,6 +104,34 @@ class Generator:
 
     r = self.namedtypes_in_evaluation[key] = RealType('placeholder_rt')
     realtype = self.evaluate_type(sym.node.type, is_top_call=False)
+    self.namedtypes_in_evaluation.remove_by_key(key)
+    write_instance_content_to(realtype, r)
+
+    return r
+  
+  def evaluate_named_generic_type(self, generic_type_node):
+    sym = self.map.get_symbol(generic_type_node.name.value, generic_type_node.pos)
+  
+    check_sym_is_generic_type(generic_type_node.name, sym)
+
+    if (got := len(generic_type_node.generics)) != (expected := len(sym.node.generics)):
+      error(f'expected `{expected}` generic args, got `{got}`', generic_type_node.pos)
+
+    generics_rt = [self.evaluate_type(generic_type_node) for generic_type_node in generic_type_node.generics]
+    key = (id(sym), generics_rt)
+
+    if key in self.namedtypes_in_evaluation:
+      return self.namedtypes_in_evaluation[key]
+
+    r = self.namedtypes_in_evaluation[key] = RealType('placeholder_rt')
+
+    self.push_scope()
+    self.declare_generics(sym.node.generics, generics_rt)
+
+    realtype = self.evaluate_type(sym.node.type, is_top_call=False)
+
+    self.pop_scope()
+    
     self.namedtypes_in_evaluation.remove_by_key(key)
     write_instance_content_to(realtype, r)
 
@@ -114,6 +145,9 @@ class Generator:
 
         if r.is_void() and not allow_void_type:
           error('type `void` not allowed here', type_node.pos)
+      
+      case 'generic_type_node':
+        r = self.evaluate_named_generic_type(type_node)
       
       case 'ptr_type_node':
         r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False))
@@ -181,6 +215,9 @@ class Generator:
       realtype_to_use \
         if realtype_to_use is not None else \
           self.ctx if self.ctx.is_float() else REALTYPE_PLACEHOLDER
+    
+    if realtype_to_use is not None and realtype_to_use.is_int():
+      error('unable to coerce float constant expression to int type', fnum_tok.pos)
 
     value = float(fnum_tok.value)
     
@@ -223,7 +260,7 @@ class Generator:
     error(f'expected `{rt1}`, found `{rt2}`', pos)
 
   def evaluate_null(self, null_tok):
-    realtype = self.ctx if self.ctx.is_int() or self.ctx.is_ptr() else RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
+    realtype = self.ctx if self.ctx.is_int() or self.ctx.is_ptr() else REALTYPE_PLACEHOLDER
     llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), None if realtype.is_ptr() else 0)
     
     return RealData(
@@ -316,6 +353,12 @@ class Generator:
       return
     
     error(f'expected struct expression, got `{realdata.realtype}`', pos)
+
+  def expect_realdata_has_numeric_value(self, realdata, pos):
+    if realdata.has_numeric_value():
+      return
+    
+    error(f'expected comptime value to have numeric type', pos)
 
   def expect_realdata_is_numeric(self, realdata, pos):
     if realdata.realtype.is_numeric():
@@ -464,18 +507,26 @@ class Generator:
     realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER, is_top_call=False)
     realdata_right = self.evaluate_node(bin_node.right, REALTYPE_PLACEHOLDER, is_top_call=False)
 
-    if realdata_left.realtype_is_coercable():
+    rd_left_is_coercable = realdata_left.realtype_is_coercable()
+    rd_right_is_coercable = realdata_right.realtype_is_coercable()
+    
+    if rd_left_is_coercable:
       realdata_left.realtype = realdata_right.realtype
 
-    if realdata_right.realtype_is_coercable():
+    if rd_right_is_coercable:
       realdata_right.realtype = realdata_left.realtype
 
-    self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
-    self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
-
     if realdata_left.is_comptime_value() and realdata_right.is_comptime_value():
-      self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
-      is_float = realdata_left.realtype.is_float()
+      if rd_left_is_coercable and rd_right_is_coercable:
+        self.expect_realdata_has_numeric_value(realdata_left, bin_node.left.pos)
+        self.expect_realdata_has_numeric_value(realdata_right, bin_node.right.pos)
+      else:
+        self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
+        self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
+
+        self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
+        
+      is_float = realdata_left.has_float_value()
 
       return (self.evaluate_fnum if is_float else self.evaluate_num)(
         Node(
@@ -483,8 +534,11 @@ class Generator:
           value=str(self.compute_comptime_bin(realdata_left, bin_node.op, realdata_right)),
           pos=bin_node.pos
         ),
-        realtype_to_use=get_resulting_realtype_of_bin_expr(realdata_left)
+        realtype_to_use=self.ctx
       )
+
+    self.expect_realdata_is_numeric(realdata_left, bin_node.left.pos)
+    self.expect_realdata_is_numeric(realdata_right, bin_node.right.pos)
     
     if realdata_left.is_comptime_value():
       new_realtype = realdata_left.realtype = realdata_right.realtype
@@ -625,7 +679,7 @@ class Generator:
       ))
 
       if not is_first_node:
-        self.expect_realtype(rd.realtype, realdatas[0].realtype, node.pos)
+        self.expect_realtype(realdatas[0].realtype, rd.realtype, node.pos)
 
     return realdatas
   
@@ -838,7 +892,62 @@ class Generator:
   def evaluate_generics_in_call(self, generic_type_nodes):
     return list(map(lambda node: self.evaluate_type(node), generic_type_nodes))
 
+  def expect_generics_count(self, call_node, count):
+    if len(call_node.generics) == count:
+      return
+    
+    error(f'expected `{count}` generic args, got `{len(call_node.generics)}`', call_node.pos)
+
+  def expect_args_count(self, call_node, count):
+    if len(call_node.args) == count:
+      return
+    
+    error(f'expected `{count}` args, got `{len(call_node.args)}`', call_node.pos)
+
+  def evaluate_internal_call_to_ptr2int(self, call_node):
+    self.expect_generics_count(call_node, 1)
+    self.expect_args_count(call_node, 1)
+
+    generic_realtype = self.evaluate_type(call_node.generics[0])
+    if not generic_realtype.is_int():
+      error(f'expected int generic type, got `{generic_realtype}`', call_node.generics[0].pos)
+
+    realdata = self.evaluate_node(call_node.args[0], REALTYPE_PLACEHOLDER)
+    self.expect_realdata_is_ptr(realdata, call_node.args[0].pos)
+    
+    return RealData(
+      generic_realtype,
+      llvm_data=self.cur_builder.ptrtoint(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
+    )
+
+  def evaluate_internal_call_to_int2ptr(self, call_node):
+    self.expect_generics_count(call_node, 1)
+    self.expect_args_count(call_node, 1)
+
+    generic_realtype = self.evaluate_type(call_node.generics[0])
+    if not generic_realtype.is_ptr():
+      error(f'expected ptr generic type, got `{generic_realtype}`', call_node.generics[0].pos)
+
+    realdata = self.evaluate_node(call_node.args[0], RealType('u64_rt'))
+    self.expect_realdata_is_integer(realdata, call_node.args[0].pos)
+    
+    return RealData(
+      generic_realtype,
+      llvm_data=self.cur_builder.inttoptr(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
+    )
+
+  def evaluate_internal_call_node(self, call_node):
+    try:
+      attr = getattr(self, f'evaluate_internal_call_to_{call_node.name.value}')
+    except AttributeError:
+      error(f'unknown internal function `{call_node.name.value}`', call_node.name.pos)
+    
+    return attr(call_node)
+
   def evaluate_call_node(self, call_node):
+    if call_node.is_internal_call:
+      return self.evaluate_internal_call_node(call_node)
+
     fn = self.map.get_symbol(call_node.name.value, call_node.name.pos)
     check_sym_is_fn(call_node.name.value, fn)
 
@@ -897,16 +1006,16 @@ class Generator:
     self.cur_builder = ll.IRBuilder(llvm_block_exit)
 
   def evaluate_true(self, node):
+    return self.evaluate_truefalse(node, '1')
+
+  def evaluate_truefalse(self, node, value):
     return self.evaluate_num(
-      Node('num', value='1', pos=node.pos),
-      realtype_to_use=self.ctx_if_int_or(RealType('u8_rt'))
+      Node('num', value=value, pos=node.pos),
+      realtype_to_use=self.ctx_if_int_or(REALTYPE_PLACEHOLDER)
     )
 
   def evaluate_false(self, node):
-    return self.evaluate_num(
-      Node('num', value='0', pos=node.pos),
-      realtype_to_use=self.ctx_if_int_or(RealType('u8_rt'))
-    )
+    return self.evaluate_truefalse(node, '0')
 
   def evaluate_continue_node_stmt(self, continue_node):
     if not self.inside_loop:
@@ -1404,11 +1513,17 @@ def check_sym_is_fn(sym_id, sym):
 
   error(f'`{sym_id}` is not a function', sym.node.pos)
 
-def check_sym_is_type(sym_id, sym):
+def check_sym_is_type(name_tok, sym):
   if sym.kind == 'type_sym':
     return
 
-  error(f'`{sym_id}` is not a type', sym.node.pos)
+  error(f'`{name_tok.value}` is not a type', name_tok.pos)
+
+def check_sym_is_generic_type(name_tok, sym):
+  if sym.kind == 'generic_type_sym':
+    return
+
+  error(f'`{name_tok.value}` is not a generic type', name_tok.pos)
 
 def check_main_proto(main_proto, main_pos):
   throw_error = lambda: error('invalid `main` prototype', main_pos)

@@ -1,7 +1,7 @@
 from data import Node
 from utils import error
 
-SKIPPABLE = [' ', '\n', '\t']
+SKIPPABLE = [' ', '\n', '\t', '\\']
 DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=', '!=', '<=', '>=']
 KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else',
@@ -56,6 +56,10 @@ class Lexer:
     is_collecting_inline_comment = False
 
     while self.has_char and (is_collecting_inline_comment or self.cur in SKIPPABLE or self.cur == '-'):
+      if is_collecting_inline_comment and self.cur != '\n':
+        self.advance()
+        continue
+
       match self.cur:
         case '\n':
           self.line += 1
@@ -68,24 +72,23 @@ class Lexer:
         case ' ':
           self.indent += 1
         
+        case '\\':
+          if not self.on_new_line:
+            error('token `\\` can only be used as first character of the line', self.cur_pos)
+
+          self.on_new_line = False
+          self.indent = 1
+        
         case '\t':
           error('tab illegal', self.cur_pos)
         
         case '-':
-          if is_collecting_inline_comment:
-            self.advance()
-            continue
-
           if not self.has_next_char or self.nxt != '-':
             break
           
           is_collecting_inline_comment = True
         
         case _:
-          if is_collecting_inline_comment:
-            self.advance()
-            continue
-
           raise NotImplementedError()
 
       self.advance()

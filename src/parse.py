@@ -46,7 +46,7 @@ class Parser:
 
   def expect_and_consume(self, kind, allow_on_new_line=False):
     if self.cur.kind != kind:
-      error(f'expected `{kind}`, found `{self.cur.value}`', self.cur.pos)
+      error(f'expected `{kind}`, found `{self.cur.kind}`', self.cur.pos)
     
     if not allow_on_new_line and self.cur.is_on_new_line:
       error(f'unexpected token to be on a new line', self.cur.pos)
@@ -104,13 +104,29 @@ class Parser:
         pos=pos
       )
 
-    return self.expect_and_consume('id')
+    t = self.expect_and_consume('id')
 
-  def parse_generics(self):
-    if not self.match_tok('|'):
+    if self.match_tok('['):
+      pos = self.cur.pos
+      generics = self.parse_generics_in_call(use_fn_notation=False)
+
+      return self.make_node(
+        'generic_type_node',
+        name=t,
+        generics=generics,
+        pos=pos
+      )
+    
+    return t
+
+  def parse_generics(self, use_fn_notation=True):
+    opening_tokkind = '|' if use_fn_notation else '['
+    closing_tokkind = '|' if use_fn_notation else ']'
+
+    if not self.match_tok(opening_tokkind):
       return []
     
-    self.expect_and_consume('|')
+    self.expect_and_consume(opening_tokkind)
     generics = []
 
     while True:
@@ -122,14 +138,17 @@ class Parser:
       
       self.advance()
     
-    self.expect_and_consume('|')
+    self.expect_and_consume(closing_tokkind)
     return generics
 
-  def parse_generics_in_call(self):
-    if not self.match_tok('|'):
+  def parse_generics_in_call(self, use_fn_notation=True):
+    opening_tokkind = '|' if use_fn_notation else '['
+    closing_tokkind = '|' if use_fn_notation else ']'
+
+    if not self.match_tok(opening_tokkind, allow_on_new_line=use_fn_notation):
       return []
     
-    self.expect_and_consume('|')
+    self.expect_and_consume(opening_tokkind, allow_on_new_line=use_fn_notation)
     generics = []
 
     while True:
@@ -141,7 +160,7 @@ class Parser:
       
       self.advance()
     
-    self.expect_and_consume('|')
+    self.expect_and_consume(closing_tokkind)
     return generics
 
   def parse_fn_args(self):
@@ -173,7 +192,10 @@ class Parser:
 
     return self.parse_type()
 
-  def parse_bin(self, ops, terms_parser_fn):
+  def parse_bin(self, allow_left_on_new_line, ops, terms_parser_fn):
+    if not allow_left_on_new_line and self.cur.is_on_new_line:
+      error('expression not allowed to be on a new line', self.cur.pos)
+
     left = terms_parser_fn()
     
     while self.match_toks(ops):
@@ -283,8 +305,8 @@ class Parser:
         if self.match_pattern(['id', ':'], True):
           term = self.parse_struct_init_node(term.pos)
         else:
-          term = self.parse_expr()
-          self.expect_and_consume(')')
+          term = self.parse_expr(allow_left_on_new_line=True)
+          self.expect_and_consume(')', allow_on_new_line=True)
 
       case _:
         error('invalid term in expression', term.pos)
@@ -367,13 +389,13 @@ class Parser:
 
     return self.consume_cur()
 
-  def parse_expr(self):
+  def parse_expr(self, allow_left_on_new_line=False):
     return self.parse_bin(
-      ['or'], lambda: self.parse_bin(
-        ['and'], lambda: self.parse_bin(
-          ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
-            ['+', '-'], lambda: self.parse_bin(
-              ['*', '/'], lambda: self.parse_large_term()
+      allow_left_on_new_line, ['or'], lambda: self.parse_bin(
+        allow_left_on_new_line,['and'], lambda: self.parse_bin(
+          allow_left_on_new_line, ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
+            allow_left_on_new_line, ['+', '-'], lambda: self.parse_bin(
+              allow_left_on_new_line, ['*', '/'], lambda: self.parse_large_term()
             )
           )
         )
@@ -541,7 +563,7 @@ class Parser:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
           return self.parse_var_decl()
         
-        stmt = self.parse_expr() if not self.match_tok('..', allow_on_new_line=True) else self.consume_cur()
+        stmt = self.parse_expr(allow_left_on_new_line=True) if not self.match_tok('..', allow_on_new_line=True) else self.consume_cur()
         
         if self.match_toks(['=', '+=', '-=', '*=']):
           op = self.consume_cur()
@@ -570,7 +592,7 @@ class Parser:
       block.append(self.parse_stmt())
 
       if self.has_tok and not self.cur.is_on_new_line:
-        error(f'unexpected token `{self.cur.value}` at the end of a statement', self.cur.pos)
+        error(f'unexpected token `{self.cur.kind}` at the end of a statement', self.cur.pos)
 
       if not self.has_tok or self.cur.indent < self.cur_indent:
         break
@@ -603,44 +625,17 @@ class Parser:
   def parse_type_decl_node(self):
     pos = self.consume_cur().pos
     name = self.expect_and_consume('id')
+    generics = self.parse_generics(use_fn_notation=False)
     self.expect_and_consume('=')
     type = self.parse_type()
 
     return self.make_node(
       'type_decl_node',
       name=name,
+      generics=generics,
       type=type,
       pos=pos
     )
-  '''
-  def parse_import_ids(self):
-    if self.match_tok('*'):
-      return self.consume_cur()
-
-    ids = []
-    self.expect_and_consume('[')
-
-    while True:
-      if len(ids) == 0 and self.match_tok(']', allow_on_new_line=True):
-        break
-
-      name = self.expect_and_consume('id', allow_on_new_line=True)
-      alias = name
-      
-      if self.match_tok('as'):
-        self.advance()
-        alias = self.expect_and_consume('id')
-
-      ids.append(self.make_node('id_import_node', name=name, alias=alias, pos=alias.pos))
-
-      if not self.match_tok(','):
-        break
-      
-      self.advance()
-
-    self.expect_and_consume(']', allow_on_new_line=True)
-    return ids
-  '''
 
   def parse_import_node(self):
     pos = self.consume_cur().pos

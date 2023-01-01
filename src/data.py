@@ -66,7 +66,7 @@ class Node:
         return f'*{self.type}'
 
       case 'type_decl_node':
-        return f'type {self.name} = {self.type}'
+        return f'type {self.name}{self.generics} = {self.type}'
 
       case 'call_ptr_node':
         return f'<call_ptr {self.expr}, {self.args}>'
@@ -106,6 +106,9 @@ class Node:
       
       case 'index_node':
         return f'({self.instance_expr})[{self.index_expr}]'
+      
+      case 'generic_type_node':
+        return f'{self.name.value}{self.generics}'
       
       case 'assignment_node':
         return f'{self.lexpr} {self.op} {self.rexpr}'
@@ -295,6 +298,15 @@ class RealData:
   
   def realtype_is_coercable(self):
     return self.is_comptime_value() and not hasattr(self, 'realtype_is_coerced')
+  
+  def has_float_value(self):
+    return isinstance(self.value, float)
+  
+  def has_int_value(self):
+    return isinstance(self.value, int)
+  
+  def has_numeric_value(self):
+    return self.has_int_value() or self.has_float_value()
   
   def __repr__(self):
     return f'<repr RealData {self.__dict__}>'
