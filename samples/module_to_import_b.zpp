@@ -1,0 +1,2 @@
+fn get_module_name() -> *u8:
+  return "module_to_import_b.zpp"

@@ -1,6 +1,6 @@
 -- 39
 
-import "module_to_import.zpp"
+from "module_to_import.zpp" import *
 
 -- this function will be used by
 -- `module_to_import.zpp` to test

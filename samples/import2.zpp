@@ -1,0 +1,15 @@
+-- 10
+
+from "module_to_import.zpp" import [ Point, point_add ]
+
+-- [x] TODO: import undeclared symbol
+-- [x] TODO: search for conflicts when importing
+-- [ ] TODO: try to use two fn with the same name from different modules
+
+fn main(argc: u32, argv: **u8) -> i32:
+  a: Point = (x: 1, y: 2)
+  b: Point = (x: 3, y: 4)
+
+  c: Point = point_add(&a, &b)
+
+  return (c.x + c.y) as i32

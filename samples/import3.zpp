@@ -1,0 +1,10 @@
+-- 1
+
+from "module_to_import_a.zpp" import [ get_module_name as a ]
+from "module_to_import_b.zpp" import [ get_module_name as b ]
+
+fn main(argc: u32, argv: **u8) -> i32:
+  x: *u8 = a()
+  y: *u8 = b()
+
+  return 1 if x[17] == 'a' and y[17] == 'b' else 0

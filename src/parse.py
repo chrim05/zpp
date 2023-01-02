@@ -721,17 +721,45 @@ class Parser:
       type=type,
       pos=pos
     )
+  
+  def parse_import_ids(self):
+    if self.match_tok('*'):
+      return self.consume_cur()
+
+    ids = []
+    self.expect_and_consume('[')
+
+    while True:
+      if len(ids) == 0 and self.match_tok(']', allow_on_new_line=True):
+        break
+
+      name = self.expect_and_consume('id', allow_on_new_line=True)
+      alias = name
+
+      if self.match_tok('as'):
+        self.advance()
+        alias = self.expect_and_consume('id')
+
+      ids.append(self.make_node('id_import_node', name=name, alias=alias, pos=alias.pos))
+
+      if not self.match_tok(','):
+        break
+
+      self.advance()
+
+    self.expect_and_consume(']', allow_on_new_line=True)
+    return ids
 
   def parse_import_node(self):
     pos = self.consume_cur().pos
     path = self.expect_and_consume('str')
-    #self.expect_and_consume('import')
-    # ids = self.parse_import_ids()
+    self.expect_and_consume('import')
+    ids = self.parse_import_ids()
 
     return self.make_node(
       'import_node',
       path=path,
-      # ids=ids,
+      ids=ids,
       pos=pos
     )
 
@@ -749,7 +777,7 @@ class Parser:
       case 'type':
         node = self.parse_type_decl_node()
       
-      case 'import':
+      case 'from':
         node = self.parse_import_node()
       
       case 'id':

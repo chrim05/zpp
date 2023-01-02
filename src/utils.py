@@ -4,10 +4,10 @@ def error(msg, pos):
   if pos is None:
     exit(f'error: {msg}')
 
-  line, col, src, path = pos
+  line, col, src, _ = pos
   lines = src.split('\n')
 
-  print(f'"{path}" [line: {line}, col: {col}]: {msg}')
+  print(f'{repr_pos(pos, use_path=True)}: {msg}')
   print(f'+ {lines[line - 1]}')
   exit(f'+ {" " * (col - 1)}^')
 
@@ -38,3 +38,57 @@ def var_is_comptime(name):
 
 def string_contains_float(s):
   return '.' in s
+
+def has_to_import_all_ids(ids):
+  from data import Node
+
+  return isinstance(ids, Node)
+
+def repr_pos(pos, use_path=False):
+  line, col, _, path = pos
+  r = f'[line: {line}, col: {col}]'
+
+  if use_path:
+    r = f'"{path}" {r}'
+
+  return r
+
+def check_imports(g):
+  global cache
+
+  for path_of_imp, ids in g.imports.items():
+    has_to_import_all = has_to_import_all_ids(ids)
+    imported_module_generator = cache[path_of_imp]
+
+    if has_to_import_all:
+      # we check all symbols for collition, because we imported all of them
+      ids = [(sym_id, sym_id, ids) for sym_id, _ in imported_module_generator.base_map.symbols.items()]
+    
+    id_names = list(map(lambda i: i[0], ids))
+    id_aliases = list(map(lambda i: i[1], ids))
+    all_symbols_of_g = g.get_list_of_all_global_symbol_ids()
+    for i, (id_name, id_alias) in enumerate(zip(id_names, id_aliases)):
+      if not has_to_import_all and (
+        id_aliases.count(id_alias) > 1 or id_names.count(id_name) > 1
+      ):
+        error(f'id `{id_name}` is imported multiple times', ids[i][2])
+
+      if all_symbols_of_g.count(id_alias) > 1:
+        error(f'imported id `{id_alias}` is in conflict with self module ids', ids[i][2])
+    
+    if has_to_import_all:
+      return
+
+    # check if the imported symbol actually exists in imported_module_generator
+    for i, id_alias in enumerate(map(lambda i: i[0], ids)):
+      if not imported_module_generator.base_map.is_declared(id_alias):
+        error(f'id `{id_alias}` is not declared in the imported module', ids[i][2])
+
+def check_imports_of_all_modules():
+  global cache
+
+  for _, g in cache.items():
+    check_imports(g)
+
+def get_filename_from_path(path):
+  return fixpath(path).split('/')[-1]

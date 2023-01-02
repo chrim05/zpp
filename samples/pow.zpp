@@ -10,7 +10,7 @@ fn ipow(base: u64, exp: u16) -> u64:
   return r
 
 -- recursive pow
-fn rpow(base: u64, exp: u16) -> u64:  
+fn rpow(base: u64, exp: u16) -> u64:
   return 1 if exp == 0 else base * rpow(base, exp - 1)
 
 fn main(argc: u32, argv: **u8) -> i32:

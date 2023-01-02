@@ -119,6 +119,12 @@ class Node:
       case 'continue_node':
         return 'continue'
       
+      case 'import_node':
+        return f'from {self.path} import {self.ids}'
+      
+      case 'id_import_node':
+        return f'{self.name} as {self.alias}'
+      
       case 'index_node':
         return f'({self.instance_expr})[{self.index_expr}]'
       
@@ -152,10 +158,10 @@ class MappedAst:
   
   def declare_symbol(self, id, sym, pos):
     if id in RESERVED_SYMBOLS:
-      error(f'symbol `{id}` is reserved')
+      error(f'id `{id}` is reserved')
 
     if id in self.symbols:
-      error(f'symbol `{id}` already declared', pos)
+      error(f'id `{id}` already declared', pos)
     
     self.symbols[id] = sym
   
@@ -164,7 +170,7 @@ class MappedAst:
   
   def get_symbol(self, id, pos):
     if id not in self.symbols:
-      error(f'symbol `{id}` not declared', pos)
+      error(f'id `{id}` not declared', pos)
 
     return self.symbols[id]
   

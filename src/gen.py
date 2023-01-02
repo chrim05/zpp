@@ -1,6 +1,8 @@
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
-from utils import error, has_infinite_recursive_layout, string_contains_float, var_is_comptime, write_instance_content_to
+from utils import error, has_infinite_recursive_layout, has_to_import_all_ids, repr_pos, string_contains_float, var_is_comptime, write_instance_content_to
 import llvmlite.ir as ll
+
+import utils
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
 CSTRING_REALTYPE = RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
@@ -10,9 +12,11 @@ STRING_REALTYPE = RealType('struct_rt', fields={
 })
 
 class Generator:
-  def __init__(self, map):
+  def __init__(self, map, imports, path):
+    self.path = path
     self.maps = [map]
-    self.output = ll.Module()
+    self.imports = imports
+    self.output = utils.output
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
     self.global_evaluated = []
@@ -25,6 +29,10 @@ class Generator:
     self.internal_vars = 0
     self.strings = {}
   
+  @property
+  def base_map(self) -> MappedAst:
+    return self.maps[0]
+
   @property
   def map(self) -> MappedAst:
     return self.maps[-1]
@@ -56,6 +64,65 @@ class Generator:
   @property
   def inside_loop(self):
     return len(self.loop) > 0
+  
+  def get_symbol(self, id, pos):
+    for path_of_imp, ids in self.imports.items():
+      # when all symbols are imported
+      if has_to_import_all_ids(ids):
+        if not utils.cache[path_of_imp].base_map.is_declared(id):
+          continue
+        
+        return utils.cache[path_of_imp].base_map.get_symbol(id, pos)
+
+      # mapping ids to their aliases
+      if id in (id_aliases := list(map(lambda i: i[1], ids))):
+        real_id = list(map(lambda i: i[0], ids))[id_aliases.index(id)]
+        return utils.cache[path_of_imp].base_map.get_symbol(real_id, pos)
+
+    return self.map.get_symbol(id, pos)
+
+  def declare_symbol(self, id, sym, pos):
+    for path_of_imp, ids in self.imports.items():
+      # when all symbols are imported
+      if has_to_import_all_ids(ids):
+        if utils.cache[path_of_imp].base_map.is_declared(id):
+          error(f'id `{id}` already declared (from import at {repr_pos(ids.pos)})', pos)
+
+        continue
+
+      # mapping ids to their aliases
+      if id in (id_aliases := list(map(lambda i: i[1], ids))):
+        pos = ids[id_aliases.index(id)][2]
+        error(f'id `{id}` already declared (from import at {repr_pos(pos)})', pos)
+
+    self.map.declare_symbol(id, sym, pos)
+  
+  def is_declared(self, id):
+    for path_of_imp, ids in self.imports.items():
+      # when all symbols are imported
+      if has_to_import_all_ids(ids):
+        if utils.cache[path_of_imp].base_map.is_declared(id):
+          return True
+        
+        continue
+
+      # mapping ids to their aliases
+      if id in map(lambda i: i[1], ids):
+        return True
+
+    return self.map.is_declared(id)
+  
+  def get_list_of_all_global_symbol_ids(self):
+    r = list(self.base_map.symbols.keys())
+
+    for path_of_imp, ids in self.imports.items():
+      if has_to_import_all_ids(ids):
+        r.extend(utils.cache[path_of_imp].base_map.symbols.keys())
+        continue
+      
+      r.extend(map(lambda i: i[1], ids))
+    
+    return r
 
   def push_loop(self, loop):
     # loop = (condition_checker_block, exit_block)
@@ -88,12 +155,7 @@ class Generator:
     except KeyError:
       pass
 
-  def evaluate_named_type(self, type_node):
-    sym = self.map.get_symbol(type_node.value, type_node.pos)
-
-    if sym.kind == 'alias_sym':
-      return sym.realtype
-    
+  def internal_evaluate_named_type(self, type_node, sym):
     if sym.kind == 'generic_type_sym':
       error(f'expected `{len(sym.node.generics)}` generic args, got `0`', type_node.pos)
 
@@ -110,9 +172,17 @@ class Generator:
     write_instance_content_to(realtype, r)
 
     return r
+
+  def evaluate_named_type(self, type_node):
+    sym = self.get_symbol(type_node.value, type_node.pos)
+
+    if sym.kind == 'alias_sym':
+      return sym.realtype
+
+    return sym.generator.internal_evaluate_named_type(type_node, sym)
   
   def evaluate_named_generic_type(self, generic_type_node):
-    sym = self.map.get_symbol(generic_type_node.name.value, generic_type_node.pos)
+    sym = self.get_symbol(generic_type_node.name.value, generic_type_node.pos)
   
     check_sym_is_generic_type(generic_type_node.name, sym)
 
@@ -290,7 +360,7 @@ class Generator:
     if sym.is_comptime:
       sym.realdata = realdata
     else:
-      glob = ll.GlobalVariable(self.output, self.convert_realtype_to_llvmtype(realtype), var_decl_node.name.value)
+      glob = ll.GlobalVariable(sym.generator.output, self.convert_realtype_to_llvmtype(realtype), self.fixname_for_llvm(var_decl_node.name.value))
       glob.initializer = realdata.llvm_data
       sym.realtype = realtype
       sym.llvm_data = glob
@@ -298,7 +368,7 @@ class Generator:
     self.global_evaluated.append(key)
 
   def evaluate_id(self, id_tok):
-    sym = self.map.get_symbol(id_tok.value, id_tok.pos)
+    sym = self.get_symbol(id_tok.value, id_tok.pos)
 
     check_sym_is_local_or_global_var(id_tok, sym)
 
@@ -925,7 +995,7 @@ class Generator:
       realdata=realdata if is_comptime else None
     )
 
-    self.map.declare_symbol(var_decl_node.name.value, sym, var_decl_node.name.pos)
+    self.declare_symbol(var_decl_node.name.value, sym, var_decl_node.name.pos)
 
   def evaluate_if_node_stmt(self, if_node):
     has_else_branch = if_node.else_branch is not None
@@ -1067,7 +1137,7 @@ class Generator:
     if call_node.is_internal_call:
       return self.evaluate_internal_call_node(call_node)
 
-    fn = self.map.get_symbol(call_node.name.value, call_node.name.pos)
+    fn = self.get_symbol(call_node.name.value, call_node.name.pos)
     check_sym_is_fn(call_node.name.value, fn)
 
     if len(call_node.generics) != len(fn.node.generics):
@@ -1077,9 +1147,9 @@ class Generator:
       error(f'expected `{len(fn.node.args)}` args, got `{len(call_node.args)}`', call_node.pos)
 
     proto, llvmfn, _ = \
-      self.gen_nongeneric_fn(fn) \
+      fn.generator.gen_nongeneric_fn(fn) \
         if len(fn.node.generics) == 0 else \
-          self.gen_generic_fn(fn, self.evaluate_generics_in_call(call_node.generics))
+          fn.generator.gen_generic_fn(fn, self.evaluate_generics_in_call(call_node.generics))
 
     realdata_args = []
     
@@ -1315,7 +1385,7 @@ class Generator:
       llvm_data = self.strings[tok.value] = ll.GlobalVariable(
         self.output,
         t := ll.ArrayType(ll.IntType(8), len(tok.value) + 1),
-        f'str.{self.str_counter}'
+        self.fixname_for_llvm(f'str.{self.str_counter}')
       )
 
       llvm_data.initializer = ll.Constant(t, bytearray((tok.value + '\0').encode('ascii')))
@@ -1434,15 +1504,17 @@ class Generator:
       case _:
         raise NotImplementedError()
 
+  def fixname_for_llvm(self, name):
+    return f'{self.path}::{name}'
+
   def create_llvm_function(self, fn_name, proto):
     llvm_fn = ll.Function(
       self.output,
       self.convert_proto_to_llvmproto(proto),
-      fn_name
+      self.fixname_for_llvm(fn_name)
     )
 
-    llvm_fn.linkage = 'private' if fn_name != 'main' else 'external'
-
+    llvm_fn.linkage = 'private'
     return llvm_fn
 
   def push_ctx(self, realtype):
@@ -1535,7 +1607,7 @@ class Generator:
 
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
-      llvm_data = self.allocas_builder.alloca(typ := self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
+      llvm_data = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
 
       self.llvm_store(self.cur_builder, self.cur_fn[1].args[i], llvm_data)
 
@@ -1547,7 +1619,7 @@ class Generator:
         realdata=None
       )
 
-      self.map.declare_symbol(arg_name.value, sym, arg_name.pos)
+      self.declare_symbol(arg_name.value, sym, arg_name.pos)
 
   def gen_nongeneric_fn(self, fn):
     key = id(fn)
@@ -1568,7 +1640,7 @@ class Generator:
   
   def declare_generics(self, generic_params, rt_generic_args):
     for param, rt_arg in zip(generic_params, rt_generic_args):
-      self.map.declare_symbol(
+      self.declare_symbol(
         param.value,
         Symbol('alias_sym', realtype=rt_arg),
         param.pos
@@ -1659,13 +1731,13 @@ class Generator:
     self.maps.append(self.maps[-1].copy())
   
   def push_scope(self):
-    self.maps.append(self.maps[0].copy())
+    self.maps.append(self.base_map.copy())
   
   def pop_scope(self):
     self.maps.pop()
 
-def get_main(mapped_ast):
-  return mapped_ast.get_symbol('main', None)
+def get_main(g):
+  return g.base_map.get_symbol('main', None)
 
 def check_sym_is_fn(sym_id, sym):
   if sym.kind == 'fn_sym':
@@ -1706,12 +1778,28 @@ def check_main_proto(main_proto, main_pos):
   if main_proto.ret_type.kind != 'i32_rt':
     throw_error()
 
-def gen(mapped_ast):
-  g = Generator(mapped_ast)
-  main = get_main(mapped_ast)
+def gen_llvm_main(llvm_internal_main, g):
+  llvm_main = ll.Function(g.output,
+    ll.FunctionType(
+      ll.IntType(32),
+      [
+        ll.IntType(32),
+        ll.PointerType(ll.PointerType(ll.IntType(8)))
+      ]
+    ),
+    'main'
+  )
+
+  entry = ll.IRBuilder(llvm_main.append_basic_block('entry'))
+  entry.ret(
+    entry.call(llvm_internal_main, [llvm_main.args[0], llvm_main.args[1]])
+  )
+
+def gen(g):
+  main = get_main(g)
 
   check_sym_is_fn('main', main)
   main_proto, _, _ = g.gen_nongeneric_fn(main)
   check_main_proto(main_proto, main.node.pos)
 
-  return g.output
+  gen_llvm_main(g.fn_evaluated[id(main)][1], g)

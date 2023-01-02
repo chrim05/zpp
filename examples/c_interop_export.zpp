@@ -1,2 +1,2 @@
-export('zpp_add') fn add(a: u64, b: u64) -> u64:
+export("zpp_add") fn add(a: u64, b: u64) -> u64:
   return a + b

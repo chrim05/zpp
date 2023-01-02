@@ -1,4 +1,5 @@
--- todo form ".." import [..]
-
 fn main(argc: u32, argv: **u8) -> i32:
+  x: *u8 = a()
+  y: *u8 = b()
+
   return 0
