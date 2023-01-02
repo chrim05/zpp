@@ -52,12 +52,12 @@ def run_tests():
       f.write(repr(llvmir))
 
     if (exitcode := system(f'clang -Wno-override-module {llvm_ir_file} -o {tmp_folder}/a.exe')) != 0:
-      fail(llvm_ir_file, f'clang error, exitcode: {exitcode}')
+      fail(llvmir, f'clang error, exitcode: {exitcode}')
     
     if expected_exitcode is None:
       print('skipped runtime')
     elif (exitcode := system(f'{tmp_folder}/a.exe arg')) != expected_exitcode:
-      fail(llvm_ir_file, f'runtime error, (expected: {expected_exitcode}, got: {exitcode})')
+      fail(llvmir, f'runtime error, (expected: {expected_exitcode}, got: {exitcode})')
     else:
       print('passed')
 
@@ -70,7 +70,7 @@ def main():
     srcpath = getabspath(argv[1])
     llvm_ir = compile(srcpath)[-1]
 
-    with open(path + '.ll', 'w') as f:
+    with open(srcpath + '.ll', 'w') as f:
       f.write(repr(llvm_ir))
   else:
     path = getabspath('samples/simple.zpp')
