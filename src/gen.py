@@ -360,7 +360,7 @@ class Generator:
     if sym.is_comptime:
       sym.realdata = realdata
     else:
-      glob = ll.GlobalVariable(sym.generator.output, self.convert_realtype_to_llvmtype(realtype), self.fixname_for_llvm(var_decl_node.name.value))
+      glob = ll.GlobalVariable(self.output, self.convert_realtype_to_llvmtype(realtype), self.fixname_for_llvm(var_decl_node.name.value))
       glob.initializer = realdata.llvm_data
       sym.realtype = realtype
       sym.llvm_data = glob
@@ -373,7 +373,7 @@ class Generator:
     check_sym_is_local_or_global_var(id_tok, sym)
 
     if sym.kind == 'global_var_sym':
-      self.evaluate_global_sym(sym)
+      sym.generator.evaluate_global_sym(sym)
 
     if sym.is_comptime:
       return sym.realdata
