@@ -1,5 +1,5 @@
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
-from utils import error, has_infinite_recursive_layout, var_is_comptime, write_instance_content_to
+from utils import error, has_infinite_recursive_layout, string_contains_float, var_is_comptime, write_instance_content_to
 import llvmlite.ir as ll
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
@@ -202,7 +202,7 @@ class Generator:
     realtype = \
       realtype_to_use \
         if realtype_to_use is not None else \
-          self.ctx if self.ctx.is_numeric() else REALTYPE_PLACEHOLDER
+          self.ctx if self.ctx.is_numeric() else RealType('i32_rt')
 
     value = (float if realtype.is_float() else int)(num_tok.value)
     
@@ -216,9 +216,9 @@ class Generator:
     realtype = \
       realtype_to_use \
         if realtype_to_use is not None else \
-          self.ctx if self.ctx.is_float() else REALTYPE_PLACEHOLDER
+          self.ctx if self.ctx.is_float() else RealType('f32_rt')
     
-    if realtype_to_use is not None and realtype_to_use.is_int():
+    if realtype_to_use is not None and string_contains_float(fnum_tok.value) and realtype_to_use.is_int():
       error('unable to coerce float constant expression to int type', fnum_tok.pos)
 
     value = float(fnum_tok.value)
@@ -262,7 +262,7 @@ class Generator:
     error(f'expected `{rt1}`, found `{rt2}`', pos)
 
   def evaluate_null(self, null_tok):
-    realtype = self.ctx if self.ctx.is_int() or self.ctx.is_ptr() else REALTYPE_PLACEHOLDER
+    realtype = self.ctx if self.ctx.is_numeric() or self.ctx.is_ptr() else RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
     llvm_data = ll.Constant(self.convert_realtype_to_llvmtype(realtype), None)
     
     return RealData(
@@ -429,6 +429,9 @@ class Generator:
 
   def ctx_if_int_or(self, alternative_rt):
     return self.ctx if self.ctx.is_int() else alternative_rt
+
+  def ctx_if_numeric_or(self, alternative_rt):
+    return self.ctx if self.ctx.is_numeric() else alternative_rt
 
   def evaluate_andor_node(self, bin_node):
     def restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder):
@@ -808,16 +811,16 @@ class Generator:
     
     error(f'expected pointer expression, got `{realdata.realtype}`', pos)
 
-  def evaluate_try_node_stmt(self, try_node):
-    def create_internal_var_name(pos):
-      self.internal_vars += 1
-      return Node('id', value=f'internal.{self.internal_vars}', pos=pos)
+  def create_internal_var_name(self, pos):
+    self.internal_vars += 1
+    return Node('id', value=f'internal.{self.internal_vars}', pos=pos)
 
+  def evaluate_try_node_stmt(self, try_node):
     has_no_var = try_node.var is None
 
     var_decl_node = Node(
       'var_decl_node',
-      name=create_internal_var_name(try_node.expr.pos) if has_no_var else try_node.var.name,
+      name=self.create_internal_var_name(try_node.expr.pos) if has_no_var else try_node.var.name,
       type=self.cur_fn[0].ret_type if has_no_var else try_node.var.type,
       expr=try_node.expr,
       pos=try_node.pos if has_no_var else try_node.var.pos
@@ -933,8 +936,7 @@ class Generator:
     llvm_block_else_branch = self.cur_fn[1].append_basic_block('else_branch_block') if has_else_branch else None
     llvm_exit_block = self.cur_fn[1].append_basic_block('exit_block')
 
-    cond_rd = self.evaluate_node(if_node.if_branch.cond, RealType('u8_rt'))
-    self.expect_realdata_is_integer(cond_rd, if_node.if_branch.cond.pos)
+    cond_rd = self.evaluate_condition_node(if_node.if_branch.cond)
 
     false_br = llvm_block_elif_condcheckers[0] if len(llvm_block_elif_branches) > 0 else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
@@ -953,8 +955,7 @@ class Generator:
     for i, elif_branch in enumerate(if_node.elif_branches):
       self.push_builder(ll.IRBuilder(llvm_block_elif_condcheckers[i]))
 
-      cond_rd = self.evaluate_node(elif_branch.cond, RealType('u8_rt'))
-      self.expect_realdata_is_integer(cond_rd, elif_branch.cond.pos)
+      cond_rd = self.evaluate_condition_node(elif_branch.cond)
 
       false_br = llvm_block_elif_condcheckers[i + 1] if i + 1 < len(llvm_block_elif_branches) else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
@@ -981,6 +982,11 @@ class Generator:
       self.pop_scope()
 
     self.cur_builder = ll.IRBuilder(llvm_exit_block)
+
+  def evaluate_condition_node(self, condition_node):
+    cond_rd = self.evaluate_node(condition_node, RealType('u8_rt'))
+    self.expect_realdata_is_integer(cond_rd, condition_node.pos)
+    return cond_rd
   
   def fix_sub_scope_terminator(self, has_terminator, llvm_exit_block):
     if has_terminator:
@@ -1097,8 +1103,7 @@ class Generator:
     self.cur_builder.branch(llvm_block_check)
     self.cur_builder = ll.IRBuilder(llvm_block_check)
 
-    cond_rd = self.evaluate_node(while_node.cond, RealType('u8_rt'))
-    self.expect_realdata_is_integer(cond_rd, while_node.cond.pos)
+    cond_rd = self.evaluate_condition_node(while_node.cond)
 
     if cond_rd.is_comptime_value():
       self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
@@ -1124,7 +1129,7 @@ class Generator:
   def evaluate_truefalse(self, node, value):
     return self.evaluate_num(
       Node('num', value=value, pos=node.pos),
-      realtype_to_use=self.ctx_if_int_or(REALTYPE_PLACEHOLDER)
+      realtype_to_use=self.ctx_if_numeric_or(RealType('u8_rt'))
     )
 
   def evaluate_false(self, node):
@@ -1229,8 +1234,7 @@ class Generator:
     self.cur_builder.branch(llvm_block_mid)
     self.cur_builder = ll.IRBuilder(llvm_block_mid)
 
-    cond_rd = self.evaluate_node(for_node.mid_node, RealType('u8_rt'))
-    self.expect_realdata_is_integer(cond_rd, for_node.mid_node.pos)
+    cond_rd = self.evaluate_condition_node(for_node.mid_node)
 
     if cond_rd.is_comptime_value():
       self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
@@ -1310,17 +1314,18 @@ class Generator:
       self.str_counter += 1
       llvm_data = self.strings[tok.value] = ll.GlobalVariable(
         self.output,
-        t := ll.ArrayType(ll.IntType(8), len(tok.value)),
+        t := ll.ArrayType(ll.IntType(8), len(tok.value) + 1),
         f'str.{self.str_counter}'
       )
 
-      llvm_data.initializer = ll.Constant(t, bytearray(tok.value.encode('ascii')))
+      llvm_data.initializer = ll.Constant(t, bytearray((tok.value + '\0').encode('ascii')))
     else:
       llvm_data = self.strings[tok.value]
 
     if self.ctx == CSTRING_REALTYPE:
       return RealData(
         CSTRING_REALTYPE,
+        value=tok.value,
         llvm_data=llvm_data
       )
     
@@ -1330,6 +1335,7 @@ class Generator:
 
     return RealData(
       STRING_REALTYPE,
+      value=tok.value,
       llvm_data=llvm_data
     )
 
@@ -1341,6 +1347,45 @@ class Generator:
       self.evaluate_stmt(stmt)
     
     return self.cur_builder.block.is_terminated
+  
+  def evaluate_inline_if_node(self, inline_if_node):
+    cond_rd = self.evaluate_condition_node(inline_if_node.if_cond)
+
+    if cond_rd.is_comptime_value():
+      return self.evaluate_node(
+        inline_if_node.if_expr if cond_rd.value else inline_if_node.else_expr,
+        self.ctx
+      )
+
+    llvm_block_if_branch = self.cur_fn[1].append_basic_block('inline_if_branch_block')
+    llvm_block_else_branch = self.cur_fn[1].append_basic_block('inline_else_branch_block')
+    llvm_exit_block = self.cur_fn[1].append_basic_block('exit_block')
+    
+    self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_if_branch, llvm_block_else_branch)
+
+    self.push_builder(ll.IRBuilder(llvm_block_if_branch))
+    if_realdata = self.evaluate_node(inline_if_node.if_expr, self.ctx)
+    self.cur_builder.branch(llvm_exit_block)
+    self.pop_builder()
+
+    realtype = if_realdata.realtype
+
+    self.push_builder(ll.IRBuilder(llvm_block_else_branch))
+    else_realdata = self.evaluate_node(inline_if_node.else_expr, realtype)
+    self.cur_builder.branch(llvm_exit_block)
+    self.pop_builder()
+
+    self.expect_realtype_are_compatible(if_realdata.realtype, else_realdata.realtype, inline_if_node.else_expr.pos)
+
+    self.cur_builder = ll.IRBuilder(llvm_exit_block)
+    return RealData(
+      realtype,
+      llvm_data=self.llvm_phi(
+        self.cur_builder,
+        [(if_realdata.llvm_data, llvm_block_if_branch), (else_realdata.llvm_data, llvm_block_else_branch)],
+        self.convert_realtype_to_llvmtype(realtype)
+      )
+    )
 
   def convert_realtype_to_llvmtype(self, realtype, in_progress_struct_rd_ids=[]):
     if realtype.is_int():

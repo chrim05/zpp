@@ -1,0 +1,4 @@
+-- 1
+
+fn main(argc: u32, argv: **u8) -> i32:
+  return 0 if argc == 1 else 1

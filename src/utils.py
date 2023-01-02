@@ -35,3 +35,6 @@ def has_infinite_recursive_layout(realtype, in_progres_struct_rt_ids=[]):
 
 def var_is_comptime(name):
   return name[0].isupper()
+
+def string_contains_float(s):
+  return '.' in s

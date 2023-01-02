@@ -1,43 +1,43 @@
-import 'std:mem.zpp' ( Fat )
-
 type Vec3 = (x: u64, y: u64, z: u64)
-type String = (len: u64, ptr: *u8) -- this actually exists in 'std:string.zpp'
+type String = Fat[u8] -- this actually exists in 'std:string.zpp'
+type Fat[T] = (ptr: *T, len: u64)
 
 fn add(a: i32, b: i32) -> i32:
   return a + b
 
 fn main(argc: u32, argv: **u8) -> i32:
-  THIS_IS_CONST: *u8 = cstr!('this must be a comptime value')
+  ThisIsConst: *u8 = "this must be a comptime value"
+  Size: u64 = 2
 
-  s: *u8 = cstr!('hello world') -- this points to the data segment
-  y: String = 'sized literal string' -- this also points to it
+  s: *u8 = "hello world" -- this points to the data segment
+  y: String = "sized literal string" -- this also points to it
   c: u8 = 'c'
   i: i32 = -1
   u: u64 = 1
   f: f32 = 3.14
-  k: i32 = .. -- not assigned (potentially any value)
+  k: i32 = undefined -- not assigned (potentially any value)
   v: Vec3 = (x: 1, y: 2, z: 3)
-  -- error: cannot clone v value (use `&v` or `clone!(v)`)
-  -- w: Vec3 = v
-  a: [2 * i32] = [1, 2] -- static array
-  b: Fat[i32] = (len: 2, ptr: &a) -- sized array
+  w: Vec3 = v
+  a: [Size x i32] = [1, 2] -- static array
+  b: Fat[i32] = (ptr: &a as *i32, len: 2) -- sized array
   
-  s = cstr!('goodbye')
+  s = "goodbye"
   i = true
   u = 'i'
   c = null
   f = false
+  f = null
 
-  -- the `..` value can also be passed to function calls 
+  -- the `undefined` value can also be passed to function calls 
   -- (it's actually a value coercable to any type)
-  x: i32 = add(1, ..)
+  x: i32 = add(1, undefined)
 
   if x == 1:
     pass
   else:
     pass
   
-  -- it can be used to discard values as well
+  -- we can discard non-void values
   .. = 1
 
   return 0

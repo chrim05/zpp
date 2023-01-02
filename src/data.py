@@ -80,6 +80,9 @@ class Node:
       case 'var_decl_node':
         return f'<var `{self.name.value}`: {self.type} = {self.expr}>'
       
+      case 'inline_if_node':
+        return f'({self.if_expr} if {self.if_cond} else {self.else_expr})'
+      
       case 'struct_type_node':
         return f'<struct_type_node {self.fields}>'
       

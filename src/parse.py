@@ -384,10 +384,29 @@ class Parser:
 
     term = self.parse_term()
 
-    if self.match_tok('as'):
-      term = self.parse_as_node(term)
+    while self.match_toks(['as']):
+      match self.cur.kind:
+        case 'as':
+          term = self.parse_as_node(term)
+
+        case _:
+          raise NotImplementedError()
     
     return term
+  
+  def parse_inline_if_node(self, if_expr):
+    pos = self.consume_cur().pos
+    if_cond = self.parse_expr()
+    self.expect_and_consume('else')
+    else_expr = self.parse_expr()
+
+    return self.make_node(
+      'inline_if_node',
+      if_expr=if_expr,
+      if_cond=if_cond,
+      else_expr=else_expr,
+      pos=pos
+    )
 
   def throw_error_when_tok_on_new_line_and_not_allowed(self, allow_left_on_new_line):
     if not allow_left_on_new_line and self.cur.is_on_new_line:
@@ -411,7 +430,7 @@ class Parser:
     return self.consume_cur()
 
   def parse_expr(self, allow_left_on_new_line=False):
-    return self.parse_bin(
+    expr = self.parse_bin(
       allow_left_on_new_line, ['or'], lambda: self.parse_bin(
         allow_left_on_new_line,['and'], lambda: self.parse_bin(
           allow_left_on_new_line, ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
@@ -422,6 +441,17 @@ class Parser:
         )
       )
     )
+
+    while self.match_toks(['if']):
+      match self.cur.kind:
+        case 'if':
+          expr = self.parse_inline_if_node(expr)
+
+        case _:
+          raise NotImplementedError()
+    
+    return expr
+
 
   def match_toks(self, toks, allow_on_new_line=False):
     for tok in toks:
