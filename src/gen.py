@@ -1,7 +1,7 @@
 from sys import argv
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
 from mapast import get_full_path_from_brother_file
-from utils import error, has_infinite_recursive_layout, has_to_import_all_ids, repr_pos, string_contains_float, var_is_comptime, write_instance_content_to
+from utils import error, has_infinite_recursive_layout, has_to_import_all_ids, is_debug_build, repr_pos, string_contains_float, var_is_comptime, write_instance_content_to
 import llvmlite.ir as ll
 
 import utils
@@ -266,7 +266,10 @@ class Generator:
     return r
 
   def evaluate_fn_proto(self, fn_node):
-    arg_types = [self.evaluate_type(arg.type) for arg in fn_node.args]
+    arg_types = [
+      self.evaluate_type(arg.type, allow_vargs_type=i == len(fn_node.args) - 1)
+        for i, arg in enumerate(fn_node.args)
+    ]
     ret_type = self.evaluate_type(fn_node.ret_type, allow_void_type=True)
 
     return self.make_proto(
@@ -1149,13 +1152,13 @@ class Generator:
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
-    return self.evaluate_truefalse(call_node, '1' if '--release' in argv else '0')
+    return self.evaluate_truefalse(call_node, '0' if is_debug_build() in argv else '1')
 
   def evaluate_internal_call_to_is_debug_build(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
-    return self.evaluate_truefalse(call_node, '0' if '--release' in argv else '1')
+    return self.evaluate_truefalse(call_node, '1' if is_debug_build() in argv else '0')
   
   def evaluate_internal_call_to_internal_call(self, call_node):
     return self.evaluate_internal_call_to_lib_call(call_node, True)
@@ -1380,7 +1383,9 @@ class Generator:
       expr_node = old_expr_node
       realdata_expr = self.internal_evaluate_index_node(expr_node, realdata_expr)
     
-    if not isinstance(realdata_expr.llvm_data, ll.LoadInstr):
+    allowed_opnames = ['load', 'bitcast'] if is_deref else ['load']
+
+    if realdata_expr.llvm_data.opname not in allowed_opnames:
       error('cannot assign a value to an expression', expr_node.pos)
     
     if not is_deref:

@@ -1,5 +1,7 @@
+-- 125
+
 type Vec3 = (x: u64, y: u64, z: u64)
-type String = Fat[u8] -- this actually exists in 'std:string.zpp'
+type String = Fat[u8] -- this actually exists in 'modules/seq.zpp'
 type Fat[T] = (ptr: *T, len: u64)
 
 fn add(a: i32, b: i32) -> i32:
@@ -40,4 +42,4 @@ fn main(argc: u32, argv: **u8) -> i32:
   -- we can discard non-void values
   .. = 1
 
-  return 0
+  return (y.len + u) as i32

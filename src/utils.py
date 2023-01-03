@@ -1,5 +1,6 @@
 from os import getcwd
 from os.path import abspath
+from sys import argv
 
 def error(msg, pos):
   if pos is None:
@@ -116,3 +117,9 @@ def change_extension_of_path(path, ext):
 def get_filename_from_path(path):
   filename_with_ext = fixpath(path).split('/')[-1]
   return '.'.join(filename_with_ext.split('.')[:-1])
+
+def is_debug_build():
+  return '--release' not in argv
+
+def is_release_build():
+  return not is_debug_build()

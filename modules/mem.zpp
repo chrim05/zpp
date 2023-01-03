@@ -95,4 +95,3 @@ fn allocator_resize(self: *mut Allocator, new_cap: u64) -> void:
   -- reconstructing the 'self' allocator
   self->cap = new_cap
   self->ptr = updated_allocation
-

@@ -5,7 +5,7 @@ from parse import parse
 from mapast import cache_mapast
 from gen import gen
 from sys import argv
-from utils import change_extension_of_path, check_imports_of_all_modules, error, fixpath, get_filename_from_path, getabspath
+from utils import *
 from tempfile import gettempdir
 from llvmlite.ir import Module
 
@@ -80,7 +80,7 @@ def main():
     tmp_folder = fixpath(gettempdir())
     llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(path)}.ll'
     output_filepath = change_extension_of_path(path, 'exe')
-    clang_flags = '-O3' if '--release' in argv else ''
+    clang_flags = '-O3' if is_release_build() in argv else ''
 
     with open(llvm_ir_file, 'w') as f:
       f.write(repr(llvm_ir))

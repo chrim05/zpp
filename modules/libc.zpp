@@ -40,3 +40,9 @@ fn strlen(cstr: *u8) -> u64:
 --
 fn memcopy(source: *u8, target: *mut u8, buffer_size: u64) -> void:
   internal_call!(|*mut u8, *u8, u64, void| "memcpy", target, source, buffer_size)
+
+--
+-- todo: desc
+--
+fn printf(fmt: *u8, args: vargs) -> i32:
+  return internal_call!(|*u8, vargs, i32| "printf", fmt, args)

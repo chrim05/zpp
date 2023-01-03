@@ -1,5 +1,0 @@
-fn main(argc: u32, argv: **u8) -> i32:
-  return square(argc as u8 - 1) as i32
-
-fn square(n: u8) -> u8:
-  return n * n

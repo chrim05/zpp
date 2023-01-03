@@ -4,7 +4,11 @@ from "../modules/mem.zpp" import [
   create_allocator, drop_allocator
 ]
 
-from "../modules/seq.zpp" import [ String, cstr_to_string ]
+from "../modules/seq.zpp" import [
+  String,
+  create_string
+]
+
 from "../modules/libc.zpp" import [ puts ]
 
 --
@@ -67,6 +71,6 @@ fn main(argc: u32, argv: **u8) -> i32:
   allocator: Allocator = create_allocator(16)
   defer drop_allocator(&mut allocator)
 
-  try puts(process(&mut allocator, &cstr_to_string(argv[1])).ptr)
+  try puts(process(&mut allocator, &create_string(argv[1])).ptr)
 
   return 0
