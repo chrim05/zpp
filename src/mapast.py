@@ -8,6 +8,8 @@ import utils
 def cache_mapast(path, ast):
   from gen import Generator
 
+  path = getabspath(path)
+
   if path not in utils.cache:
     generator = Generator(None, None, None)
     m, import_nodes = mapast_except_imports(ast, generator)
@@ -78,4 +80,4 @@ def mapast_imports(import_nodes, srcpath):
     _ = cache_mapast(path, ast)
 
 def get_full_import_path(srcpath, import_path):
-  return fixpath('/'.join(srcpath.split('/')[:-1]) + '/' + import_path)
+  return getabspath('/'.join(srcpath.split('/')[:-1]) + '/' + import_path)

@@ -1,0 +1,14 @@
+-- 2
+
+from "libs/libc.zpp" import [ malloc, free ]
+
+fn main(argc: u32, argv: **u8) -> i32:
+  x: *mut i32 = malloc(|i32|)
+  defer free(|i32| x)
+
+  *x = argc as i32
+
+  -- in return expression is still available
+  -- it means the free is called just before
+  -- the terminator (return instruction)
+  return *x

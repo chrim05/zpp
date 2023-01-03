@@ -1,4 +1,5 @@
-from posixpath import abspath
+from os import getcwd
+
 
 def error(msg, pos):
   if pos is None:
@@ -11,8 +12,24 @@ def error(msg, pos):
   print(f'+ {lines[line - 1]}')
   exit(f'+ {" " * (col - 1)}^')
 
-def getabspath(path):
-  return fixpath(abspath(path))
+def getabspath(relative_path):
+  relative_path = fixpath(relative_path)
+  splits = relative_path.split('/')
+  result = []
+
+  for i, split in enumerate(splits):
+    match split:
+      case '.':
+        if i == 0:
+          result.append(getcwd())
+
+      case '..':
+        result.pop()
+      
+      case _:
+        result.append(split)
+  
+  return '/'.join(result)
 
 def fixpath(path):
   return path.replace('\\', '/')
@@ -90,5 +107,9 @@ def check_imports_of_all_modules():
   for _, g in cache.items():
     check_imports(g)
 
+def change_extension_of_path(path, ext):
+  return '.'.join(path.split('.')[:-1]) + '.' + ext
+
 def get_filename_from_path(path):
-  return fixpath(path).split('/')[-1]
+  filename_with_ext = fixpath(path).split('/')[-1]
+  return '.'.join(filename_with_ext.split('.')[:-1])

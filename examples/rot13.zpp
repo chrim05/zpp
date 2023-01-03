@@ -41,7 +41,7 @@ fn process(chunk: *mut Chunk, source: *String) -> String:
     offset: u8 = 'a' if is_lower(c) else 'A'
     ptr[i] = (c - offset + 13) % 26 + offset
 
-  return (len: source->len, ptr: ptr as *u8)
+  return (ptr: ptr as *u8, len: source->len)
 
 ---------------------------------------------------------------------
 --                          test area                              --

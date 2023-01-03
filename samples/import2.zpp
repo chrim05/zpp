@@ -1,6 +1,6 @@
 -- 10
 
-from "module_to_import.zpp" import [ Point, point_add ]
+from "libs/module_to_import.zpp" import [ Point, point_add ]
 
 -- [x] TODO: import undeclared symbol
 -- [x] TODO: search for conflicts when importing

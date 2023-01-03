@@ -1,0 +1,9 @@
+-- allocate space for `size` bytes on to the heap
+-- return a nullable pointer
+fn malloc(|T|) -> *mut T:
+  return internal_call!(|u64, *mut T| "malloc", type_size!(|T|))
+
+-- release space of `ptr`
+-- UB when ptr is not a valid pointer to the heap
+fn free(|T| ptr: *mut T) -> void:
+  internal_call!(|*mut T, void| "free", ptr)

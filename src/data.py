@@ -242,6 +242,14 @@ class RealType:
   def is_struct(self):
     return self.kind == 'struct_rt'
   
+  def calculate_size(self):
+    if self.is_int():
+      return self.bits // 8
+
+    match self.kind:
+      case _:
+        raise NotImplementedError()
+  
   def internal_eq(self, obj, in_progress_struct_rt_ids=[]):
     if not isinstance(obj, RealType):
       return False

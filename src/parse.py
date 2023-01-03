@@ -536,6 +536,16 @@ class Parser:
       pos=pos
     )
 
+  def parse_defer_node(self):
+    pos = self.consume_cur().pos
+    node = self.parse_expr()
+
+    return self.make_node(
+      'defer_node',
+      node=node,
+      pos=pos
+    )
+
   def parse_try_node(self):
     pos = self.consume_cur().pos
     var = None
@@ -643,6 +653,9 @@ class Parser:
       
       case 'try':
         return self.parse_try_node()
+      
+      case 'defer':
+        return self.parse_defer_node()
 
       case _:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
