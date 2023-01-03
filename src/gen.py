@@ -1,4 +1,6 @@
+from sys import argv
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
+from mapast import get_full_path_from_brother_file
 from utils import error, has_infinite_recursive_layout, has_to_import_all_ids, repr_pos, string_contains_float, var_is_comptime, write_instance_content_to
 import llvmlite.ir as ll
 
@@ -17,6 +19,7 @@ class Generator:
     self.maps = [map]
     self.imports = imports
     self.output = utils.output
+    self.libs_to_import = utils.libs_to_import
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
     self.global_evaluated = []
@@ -406,6 +409,7 @@ class Generator:
       case '-': return self.cur_builder.sub(realdata_left.llvm_data, realdata_right.llvm_data)
       case '*': return self.cur_builder.mul(realdata_left.llvm_data, realdata_right.llvm_data)
       case '/': return getattr(self.cur_builder, 'sdiv' if is_signed else 'udiv')(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '%': return getattr(self.cur_builder, 'srem' if is_signed else 'urem')(realdata_left.llvm_data, realdata_right.llvm_data)
 
       case '==' | '!=' | '<' | '>' | '<=' | '>=':
         return self.llvm_icmp(
@@ -426,6 +430,7 @@ class Generator:
       case '-': return self.cur_builder.fsub(realdata_left.llvm_data, realdata_right.llvm_data)
       case '*': return self.cur_builder.fmul(realdata_left.llvm_data, realdata_right.llvm_data)
       case '/': return self.cur_builder.fdiv(realdata_left.llvm_data, realdata_right.llvm_data)
+      case '%': return self.cur_builder.frem(realdata_left.llvm_data, realdata_right.llvm_data)
 
       case '==' | '!=' | '<' | '>' | '<=' | '>=':
         return self.llvm_fcmp(
@@ -451,6 +456,7 @@ class Generator:
       case '-': return realdata_left.value - realdata_right.value
       case '*': return realdata_left.value * realdata_right.value
       case '/': return realdata_left.value / realdata_right.value
+      case '%': return realdata_left.value % realdata_right.value
 
       case '==': return int(realdata_left.value == realdata_right.value)
       case '!=': return int(realdata_left.value != realdata_right.value)
@@ -783,10 +789,10 @@ class Generator:
     )
 
   def evaluate_array_init_node(self, init_node):
-    if self.ctx.is_static_array():
+    if self.ctx.is_static_array() or self.ctx.is_ptr():
       realdatas = self.evaluate_array_init_nodes(init_node, self.ctx.type)
     else:
-      realdatas = self.evaluate_array_init_nodes(init_node, REALTYPE_PLACEHOLDER)
+      realdatas = self.evaluate_array_init_nodes(init_node, self.ctx)
 
     realtype = RealType('static_array_rt', length=len(init_node.nodes), type=realdatas[0].realtype)
     element_llvm_type = self.convert_realtype_to_llvmtype(realtype.type)
@@ -1138,24 +1144,37 @@ class Generator:
       generic_realtype,
       llvm_data=self.cur_builder.inttoptr(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
     )
+
+  def evaluate_internal_call_to_is_release_build(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 0)
+
+    return self.evaluate_truefalse(call_node, '1' if '--release' in argv else '0')
+
+  def evaluate_internal_call_to_is_debug_build(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 0)
+
+    return self.evaluate_truefalse(call_node, '0' if '--release' in argv else '1')
   
   def evaluate_internal_call_to_internal_call(self, call_node):
+    return self.evaluate_internal_call_to_lib_call(call_node, True)
+    
+  def evaluate_internal_call_to_extern_call(self, call_node):
+    return self.evaluate_internal_call_to_lib_call(call_node, False)
+
+  def evaluate_internal_call_to_lib_call(self, call_node, is_internal):
     self.expect_args_count(
       call_node,
-      lambda count: count >= 1 and count == len(call_node.generics)
+      lambda count: count >= 1 and count == len(call_node.generics) + (0 if is_internal else 1)
     )
 
     generic_ret_realtype = self.evaluate_type(call_node.generics[-1], allow_void_type=True)
     generic_arg_realtypes = [self.evaluate_type(generic) for generic in call_node.generics[:-1]]
     arg_realdatas = []
-
-    name_to_call = call_node.args[0]
-    if name_to_call.kind != 'str':
-      error('expected literal string containing the internal function name', name_to_call.pos)
-
-    name_to_call = name_to_call.value
+    name_to_call = self.expect_node_is_literal_str(call_node.args[0 if is_internal else 1])
     
-    for i, arg in enumerate(call_node.args[1:]):
+    for i, arg in enumerate(call_node.args[(1 if is_internal else 2):]):
       arg_realdatas.append(realdata := self.evaluate_node(arg, expected_realtype := generic_arg_realtypes[i]))
       self.expect_realtype(expected_realtype, realdata.realtype, arg.pos)
     
@@ -1173,6 +1192,10 @@ class Generator:
       )
 
     llvm_internal_fn = self.llvm_internal_fn_evaluated[key]
+
+    if not is_internal:
+      lib_to_import = self.expect_node_is_literal_str(call_node.args[0])
+      self.libs_to_import.add(get_full_path_from_brother_file(self.path, lib_to_import))
     
     return RealData(
       generic_ret_realtype,
@@ -1182,6 +1205,12 @@ class Generator:
         list(map(lambda arg_rd: arg_rd.llvm_data, arg_realdatas))
       )
     )
+
+  def expect_node_is_literal_str(self, node):
+    if node.kind != 'str':
+      error('expected literal string containing the internal function name', node.pos)
+    
+    return node.value
   
   def evaluate_internal_call_to_type_size(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 0)
@@ -1317,6 +1346,7 @@ class Generator:
 
   def evaluate_reference_node(self, unary_node):
     realdata_expr = self.evaluate_node(unary_node.expr, self.ctx.type if self.ctx.is_ptr() else REALTYPE_PLACEHOLDER)
+
 
     if isinstance(realdata_expr.llvm_data, ll.LoadInstr):
       self.cur_builder.remove(realdata_expr.llvm_data)

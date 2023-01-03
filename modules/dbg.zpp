@@ -1,0 +1,6 @@
+from "libc.zpp" import [ puts, exit ]
+
+-- todo: implement 'panic!()'
+fn panic(msg: *u8) -> void:
+  .. = puts(msg)
+  exit(1)

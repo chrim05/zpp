@@ -1,0 +1,72 @@
+from "../modules/mem.zpp" import [
+  Allocator,
+  allocator_create_seq, dynallocator_create_seq,
+  create_allocator, drop_allocator
+]
+
+from "../modules/seq.zpp" import [ String, cstr_to_string ]
+from "../modules/libc.zpp" import [ puts ]
+
+--
+-- returns whether `c` is 'a'..'z'
+--
+fn is_lower(c: u8) -> u8:
+  return c >= 'a' and c <= 'z'
+
+--
+-- returns whether `c` is 'A'..'Z'
+--
+fn is_upper(c: u8) -> u8:
+  return c >= 'A' and c <= 'Z'
+
+--
+-- returns whether `c` is 'a'..'z' or 'A'..'Z'
+--
+fn is_alpha(c: u8) -> u8:
+  return is_lower(c) or is_upper(c)
+
+--
+-- the function encrypts or decrypts `source` into a new buffer.
+-- `allocator` is used to allocate the output buffer.
+-- the function allocates `source->len + 1` bytes using `allocator` (
+--   the last more byte is due to backward compatibility with cstr,
+--   you can use process().ptr as cstr
+-- )
+--
+-- the used algorithm is generally O(n)
+--
+fn process(allocator: *mut Allocator, source: *String) -> String:
+  -- allocating the output buffer
+  ptr: *mut u8 = dynallocator_create_seq(|u8| allocator, source->len + 1)
+
+  -- for each char in the source buffer
+  for i: u64 = 0, i < source->len, i += 1:
+    c: u8 = source->ptr[i]
+
+    -- skipping non alpha chars
+    -- we write them in the output buffer as they are
+    if not is_alpha(c):
+      ptr[i] = c
+      continue
+
+    -- calculating and writing the rotated char to the output buffer
+    -- we also take care about the letter size
+    offset: u8 = 'a' if is_lower(c) else 'A'
+    ptr[i] = (c - offset + 13) % 26 + offset
+  
+  -- writing the null terminator
+  ptr[source->len] = '\0'
+
+  return (ptr: ptr as *u8, len: source->len)
+
+fn main(argc: u32, argv: **u8) -> i32:
+  if argc != 2:
+    try puts("expected 1 argument")
+    return 1
+
+  allocator: Allocator = create_allocator(16)
+  defer drop_allocator(&mut allocator)
+
+  try puts(process(&mut allocator, &cstr_to_string(argv[1])).ptr)
+
+  return 0

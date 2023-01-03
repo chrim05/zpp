@@ -12,16 +12,19 @@ from llvmlite.ir import Module
 import utils
 
 def clang(llvm_ir_filepath, output_filepath, flags=''):
-  cmd = f'clang -Wno-override-module {flags} {llvm_ir_filepath} -o {output_filepath}'
+  cmd = f'clang -Wno-override-module {flags} {" ".join(utils.libs_to_import)} {llvm_ir_filepath} -o {output_filepath}'
   # print(f'[+] {cmd}')
   return system(cmd)
 
 def compile(path):
+  path = getabspath(path)
+
   with open(path, 'r') as f:
     src = f.read()
   
   utils.cache = {}
   utils.output = Module(name=path)
+  utils.libs_to_import = set()
 
   toks = lex(src, path)
   ast = parse(toks)
@@ -29,7 +32,7 @@ def compile(path):
   check_imports_of_all_modules()
   gen(g)
 
-  return src, toks, ast, g.map, utils.output
+  return src, toks, ast, g.map, utils.output, path
 
 def run_tests():
   fail = lambda llvm_ir_file, msg: (
@@ -41,12 +44,12 @@ def run_tests():
     if elem == 'simple.zpp':
       continue
 
-    elem = f'samples/{elem}'
+    elem = getabspath(f'samples/{elem}')
     if not isfile(elem) or not elem.endswith('.zpp'):
       continue
 
     print(f"[+] testing '{elem}' => ", end='')
-    src, _, _, _, llvmir = compile(getabspath(elem))
+    src, _, _, _, llvmir, path = compile(elem)
 
     expected_exitcode = src.split('\n')[0].strip('- ')
     expected_exitcode = int(expected_exitcode) if expected_exitcode != '' else None
@@ -73,11 +76,10 @@ def main():
       run_tests()
       return
     
-    srcpath = getabspath(argv[1])
-    llvm_ir = compile(srcpath)[-1]
+    _, _, _, _, llvm_ir, path = compile(argv[1])
     tmp_folder = fixpath(gettempdir())
-    llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(srcpath)}.ll'
-    output_filepath = change_extension_of_path(srcpath, 'exe')
+    llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(path)}.ll'
+    output_filepath = change_extension_of_path(path, 'exe')
     clang_flags = '-O3' if '--release' in argv else ''
 
     with open(llvm_ir_file, 'w') as f:
@@ -86,8 +88,7 @@ def main():
     if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:
       error(f'clang error, exitcode: {exitcode}', None)
   else:
-    path = getabspath('samples/simple.zpp')
-    llvm_ir = compile(path)[-1]
+    _, _, _, _, llvm_ir, path = compile('samples/simple.zpp')
 
     print(repr(llvm_ir))
 

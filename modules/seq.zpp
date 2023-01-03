@@ -1,0 +1,10 @@
+from "libc.zpp" import [ strlen ]
+
+type List[T] = (ptr: *mut T, len: u64, cap: u64)
+
+type Array[T] = (ptr: *T, len: u64)
+
+type String = Array[u8]
+
+fn cstr_to_string(cstr: *u8) -> String:
+  return (ptr: cstr, len: strlen(cstr))

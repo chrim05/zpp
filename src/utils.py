@@ -1,5 +1,5 @@
 from os import getcwd
-
+from os.path import abspath
 
 def error(msg, pos):
   if pos is None:
@@ -21,15 +21,18 @@ def getabspath(relative_path):
     match split:
       case '.':
         if i == 0:
-          result.append(getcwd())
+          result.append(fixpath(getcwd()))
 
       case '..':
+        if i == 0:
+          result.extend(fixpath(getcwd()).split('/'))
+
         result.pop()
       
       case _:
         result.append(split)
   
-  return '/'.join(result)
+  return fixpath(abspath('/'.join(result)))
 
 def fixpath(path):
   return path.replace('\\', '/')

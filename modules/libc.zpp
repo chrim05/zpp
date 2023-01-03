@@ -1,0 +1,42 @@
+--
+-- allocate space for 'size_bytes' on to the heap
+-- return a nullable pointer
+--
+fn malloc(size_bytes: u64) -> *mut u8:
+  return internal_call!(|u64, *mut u8| "malloc", size_bytes)
+
+--
+-- [UB: when 'ptr' is not a valid pointer to the heap]
+-- release space of 'ptr'
+--
+fn free(ptr: *mut u8) -> void:
+  internal_call!(|*mut u8, void| "free", ptr)
+
+--
+-- print 'buffer' (a null terminated buffer) to stdout
+-- return 0 when everything worked
+--
+fn puts(buffer: *u8) -> i32:
+  return internal_call!(|*u8, i32| "puts", buffer)
+
+--
+-- [NOTE: this function does not return]
+-- close the process
+-- %errorlevel%, $? -> exit_code
+--
+fn exit(exit_code: i32) -> void:
+  internal_call!(|i32, void| "exit", exit_code)
+  -- todo: implement unreachable!()
+
+--
+-- return the length of a cstr (null terminated buffer)
+--
+fn strlen(cstr: *u8) -> u64:
+  return internal_call!(|*u8, u64| "strlen", cstr)
+
+--
+-- [UB: when 'target' is not a valid pointer]
+-- copy 'buffer_size' bytes from 'source' into 'target'
+--
+fn memcopy(source: *u8, target: *mut u8, buffer_size: u64) -> void:
+  internal_call!(|*mut u8, *u8, u64, void| "memcpy", target, source, buffer_size)

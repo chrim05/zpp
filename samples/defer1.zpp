@@ -1,6 +1,6 @@
 -- 2
 
-from "libs/libc.zpp" import [ malloc, free ]
+from "../modules/libc.zpp" import [ malloc, free ]
 
 fn main(argc: u32, argv: **u8) -> i32:
   x: *mut i32 = malloc(|i32|)

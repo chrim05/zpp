@@ -435,7 +435,7 @@ class Parser:
         allow_left_on_new_line,['and'], lambda: self.parse_bin(
           allow_left_on_new_line, ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
             allow_left_on_new_line, ['+', '-'], lambda: self.parse_bin(
-              allow_left_on_new_line, ['*', '/'], lambda: self.parse_large_term(allow_left_on_new_line)
+              allow_left_on_new_line, ['*', '/', '%'], lambda: self.parse_large_term(allow_left_on_new_line)
             )
           )
         )

@@ -15,7 +15,7 @@ def cache_mapast(path, ast):
     m, import_nodes = mapast_except_imports(ast, generator)
 
     imports = {
-      get_full_import_path(path, import_node.path.value): ([
+      get_full_path_from_brother_file(path, import_node.path.value): ([
         (id.name.value, id.alias.value, id.pos) for id in import_node.ids
       ] if isinstance(import_node.ids, list) else import_node.ids) for import_node in import_nodes
     }
@@ -64,7 +64,7 @@ def mapast_except_imports(ast_to_map, generator):
 
 def mapast_imports(import_nodes, srcpath):
   for glob in import_nodes:
-    path = get_full_import_path(srcpath, glob.path.value)
+    path = get_full_path_from_brother_file(srcpath, glob.path.value)
 
     if path in utils.cache:
       continue
@@ -79,5 +79,5 @@ def mapast_imports(import_nodes, srcpath):
     ast = parse(toks)
     _ = cache_mapast(path, ast)
 
-def get_full_import_path(srcpath, import_path):
-  return getabspath('/'.join(srcpath.split('/')[:-1]) + '/' + import_path)
+def get_full_path_from_brother_file(brother_filepath, filepath):
+  return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)
