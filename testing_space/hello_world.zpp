@@ -1,0 +1,4 @@
+from "../samples/libs/libc.zpp" import [ puts ]
+
+fn main(argc: u32, argv: **u8) -> i32:
+  return puts("hello world!")
