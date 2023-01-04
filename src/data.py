@@ -78,7 +78,7 @@ class Node:
         return f'({self.if_expr} if {self.if_cond} else {self.else_expr})'
       
       case 'struct_type_node':
-        return f'<struct_type_node {self.fields}>'
+        return f'({", ".join(self.fields)})'
       
       case 'struct_init_node':
         return f'<struct_init_node {self.fields}>'
@@ -138,7 +138,7 @@ class Node:
         return f'{self.nodes}'
 
       case _:
-        return f'<repr `{self.value}`>'
+        return self.value
 
 class MappedAst:
   def __init__(self):
@@ -226,6 +226,14 @@ class RealType:
   def is_static_array(self):
     return self.kind == 'static_array_rt'
 
+  def could_be_fat_pointer(self):
+    # todo: len should be a generic integer
+    return \
+      self.kind == 'struct_rt' and \
+        list(self.fields.keys()) == ['ptr', 'len'] and \
+          self.fields['ptr'].is_ptr() and \
+            self.fields['len'] == RealType('u64_rt')
+
   def is_float(self):
     return self.kind in ['f32_rt', 'f64_rt']
 
@@ -279,6 +287,9 @@ class RealType:
     return self.internal_eq(obj)
 
   def internal_repr(self, in_progress_struct_rt_ids=[]):
+    if hasattr(self, 'aka'):
+      return self.aka
+
     if self.is_numeric():
       return self.kind[:-3]
     

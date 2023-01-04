@@ -11,8 +11,8 @@ type Allocator = List[u8]
 
 --
 -- [NOTE: remember using 'drop_allocator']
--- create an instance of 'Allocator'
--- 'size_bytes' on to the heap using libc 'malloc'
+-- create an instance of 'Allocator' of 'cap' bytes on to
+-- the heap using libc 'malloc'
 --
 fn create_allocator(cap: u64) -> Allocator:
   ptr: *mut u8 = malloc(cap)
@@ -47,9 +47,7 @@ fn allocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
   result: *mut T = int2ptr!(|*mut T| ptr2int!(|u64| self->ptr) + self->len)
   self->len += type_size!(|T|) * len
 
-  -- todo: implement assert!()
-  if is_debug_build!() and self->cap < self->len:
-    panic("|in 'allocator_create_[seq/single]'|: overflowed during allocation (alloc more space or use 'dynallocator_create_seq')")
+  assert!(self->cap >= self->len, "overflowed during allocation (alloc more space or use 'dynallocator_create_seq')")
 
   return result
 
@@ -81,9 +79,7 @@ fn dynallocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
 -- all the old content is copied into the new allocation
 --
 fn allocator_resize(self: *mut Allocator, new_cap: u64) -> void:
-  -- todo: implement assert!()
-  if is_debug_build!() and new_cap <= self->cap:
-    panic("|in 'allocator_resize'|: 'new_cap' is expected to be bigger than the actual capacity")
+  assert!(new_cap > self->cap, "'new_cap' is expected to be bigger than the actual capacity")
 
   -- allocating a new buffer of 'new_cap' bytes
   updated_allocation: *mut u8 = malloc(new_cap)

@@ -236,7 +236,7 @@ class Parser:
       if self.match_tok('out', allow_on_new_line=True):
         args.append(self.parse_out_param())
       else:
-        args.append(self.parse_expr())
+        args.append(self.parse_expr(allow_left_on_new_line=True))
 
       if not self.match_tok(','):
         break
@@ -780,6 +780,9 @@ class Parser:
     if not self.has_tok:
       return
     
+    if not self.cur.is_on_new_line:
+      error('global must be on a new line', self.cur.pos)
+      
     if self.cur.indent != 0:
       error('global has bad indent', self.cur.pos)
 
@@ -797,7 +800,7 @@ class Parser:
         node = self.parse_var_decl()
 
       case _:
-        error('token invalid here', self.cur.pos)
+        error(f'unexpected token `{self.cur.kind}` here', self.cur.pos)
     
     return node
 

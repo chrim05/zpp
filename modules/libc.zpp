@@ -42,7 +42,17 @@ fn memcopy(source: *u8, target: *mut u8, buffer_size: u64) -> void:
   internal_call!(|*mut u8, *u8, u64, void| "memcpy", target, source, buffer_size)
 
 --
--- todo: desc
+-- source: sequence of elements
+-- elem_size: size in bytes of each element in source
+-- source_len: number of elements in source (NOT: buffer lenght of source in bytes)
+-- file_stream: wrap of c 'FILE*'
 --
-fn printf(fmt: *u8, args: vargs) -> i32:
-  return internal_call!(|*u8, vargs, i32| "vprintf", fmt, args)
+fn fwrite(source: *u8, elem_size: u64, source_len: u64, file_stream: *u8) -> u64:
+  return internal_call!(|*u8, u64, u64, *u8, u64| "fwrite", source, elem_size, source_len, file_stream)
+
+--
+-- [NOTE: this is actually a property because we can't wrap a global variable]
+-- return the stdout buffer
+--
+fn get_stdout() -> *u8:
+  return extern_call!(|*u8| "libs/libchelper.o", "get_stdout")
