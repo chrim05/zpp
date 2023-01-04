@@ -1,4 +1,4 @@
 from "../modules/libc.zpp" import [ printf ]
 
 fn main(argc: u32, argv: **u8) -> i32:
-  return printf("hello world %s %d", "123" as *u8, 3)
+  return printf("hello world %s %d", vargs!(cstr!("123"), 3))

@@ -45,4 +45,4 @@ fn memcopy(source: *u8, target: *mut u8, buffer_size: u64) -> void:
 -- todo: desc
 --
 fn printf(fmt: *u8, args: vargs) -> i32:
-  return internal_call!(|*u8, vargs, i32| "printf", fmt, args)
+  return internal_call!(|*u8, vargs, i32| "vprintf", fmt, args)

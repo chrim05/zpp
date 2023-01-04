@@ -85,6 +85,9 @@ def main():
     with open(llvm_ir_file, 'w') as f:
       f.write(repr(llvm_ir))
     
+    if '--print-llvm-ir' in argv:
+      print(llvm_ir)
+    
     if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:
       error(f'clang error, exitcode: {exitcode}', None)
   else:

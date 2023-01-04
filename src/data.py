@@ -1,11 +1,5 @@
 from utils import error, has_infinite_recursive_layout
 
-RESERVED_SYMBOLS = [
-  'i8', 'i16', 'i32', 'i64',
-  'u8', 'u16', 'u32', 'u64',
-  'void'
-]
-
 indent_fmt = '  '
 
 def repr_block(block):
@@ -157,7 +151,9 @@ class MappedAst:
     return m
   
   def declare_symbol(self, id, sym, pos):
-    if id in RESERVED_SYMBOLS:
+    from gen import BUILTINS_TABLE
+
+    if id in BUILTINS_TABLE:
       error(f'id `{id}` is reserved')
 
     if id in self.symbols:

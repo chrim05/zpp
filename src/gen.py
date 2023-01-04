@@ -7,11 +7,30 @@ import llvmlite.ir as ll
 import utils
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
+
 CSTRING_REALTYPE = RealType('ptr_rt', is_mut=False, type=RealType('u8_rt'))
+
 STRING_REALTYPE = RealType('struct_rt', fields={
   'ptr': CSTRING_REALTYPE,
   'len': RealType('u64_rt')
 })
+
+BUILTINS_TABLE = {
+  'i8': RealType('i8_rt'),
+  'i16': RealType('i16_rt'),
+  'i32': RealType('i32_rt'),
+  'i64': RealType('i64_rt'),
+
+  'u8': RealType('u8_rt'),
+  'u16': RealType('u16_rt'),
+  'u32': RealType('u32_rt'),
+  'u64': RealType('u64_rt'),
+
+  'f32': RealType('f32_rt'),
+  'f64': RealType('f64_rt'),
+
+  'void': RealType('void_rt')
+}
 
 class Generator:
   def __init__(self, map, imports, path):
@@ -149,22 +168,7 @@ class Generator:
 
   def evaluate_builtin_type(self, name):
     try:
-      return {
-        'i8': RealType('i8_rt'),
-        'i16': RealType('i16_rt'),
-        'i32': RealType('i32_rt'),
-        'i64': RealType('i64_rt'),
-
-        'u8': RealType('u8_rt'),
-        'u16': RealType('u16_rt'),
-        'u32': RealType('u32_rt'),
-        'u64': RealType('u64_rt'),
-
-        'f32': RealType('f32_rt'),
-        'f64': RealType('f64_rt'),
-
-        'void': RealType('void_rt')
-      }[name]
+      return BUILTINS_TABLE[name]
     except KeyError:
       pass
 
@@ -266,10 +270,7 @@ class Generator:
     return r
 
   def evaluate_fn_proto(self, fn_node):
-    arg_types = [
-      self.evaluate_type(arg.type, allow_vargs_type=i == len(fn_node.args) - 1)
-        for i, arg in enumerate(fn_node.args)
-    ]
+    arg_types = [self.evaluate_type(arg.type) for arg in fn_node.args]
     ret_type = self.evaluate_type(fn_node.ret_type, allow_void_type=True)
 
     return self.make_proto(
@@ -1147,6 +1148,19 @@ class Generator:
       generic_realtype,
       llvm_data=self.cur_builder.inttoptr(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
     )
+  
+  def evaluate_internal_call_to_cstr(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 1)
+
+    value = self.expect_node_is_literal_str(call_node.args[0])
+    llvm_data = self.cache_string(value)
+
+    return RealData(
+      CSTRING_REALTYPE,
+      value=value,
+      llvm_data=llvm_data
+    )
 
   def evaluate_internal_call_to_is_release_build(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
@@ -1174,6 +1188,7 @@ class Generator:
 
     generic_ret_realtype = self.evaluate_type(call_node.generics[-1], allow_void_type=True)
     generic_arg_realtypes = [self.evaluate_type(generic) for generic in call_node.generics[:-1]]
+    
     arg_realdatas = []
     name_to_call = self.expect_node_is_literal_str(call_node.args[0 if is_internal else 1])
     
@@ -1485,18 +1500,7 @@ class Generator:
     )
 
   def evaluate_str(self, tok):
-    if tok.value not in self.strings:
-      self.str_counter += 1
-      llvm_data = self.strings[tok.value] = ll.GlobalVariable(
-        self.output,
-        t := ll.ArrayType(ll.IntType(8), len(tok.value) + 1),
-        self.fixname_for_llvm(f'str.{self.str_counter}')
-      )
-
-      llvm_data.linkage = 'private'
-      llvm_data.initializer = ll.Constant(t, bytearray((tok.value + '\0').encode('ascii')))
-    else:
-      llvm_data = self.strings[tok.value]
+    llvm_data = self.cache_string(tok.value)
 
     if self.ctx == CSTRING_REALTYPE:
       return RealData(
@@ -1514,6 +1518,22 @@ class Generator:
       value=tok.value,
       llvm_data=llvm_data
     )
+
+  def cache_string(self, string):
+    if string not in self.strings:
+      self.str_counter += 1
+      llvm_data = self.strings[string] = ll.GlobalVariable(
+        self.output,
+        t := ll.ArrayType(ll.IntType(8), len(string) + 1),
+        self.fixname_for_llvm(f'str.{self.str_counter}')
+      )
+
+      # llvm_data.linkage = 'private'
+      llvm_data.initializer = ll.Constant(t, bytearray((string + '\0').encode('ascii')))
+    else:
+      llvm_data = self.strings[string]
+
+    return self.cur_builder.bitcast(llvm_data, ll.PointerType(ll.IntType(8)))
 
   def evaluate_block(self, block):
     for stmt in block:
@@ -1727,7 +1747,6 @@ class Generator:
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
       llvm_data = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(arg_realtype), name=f'arg.{i + 1}')
-
       self.llvm_store(self.cur_builder, self.cur_fn[1].args[i], llvm_data)
 
       sym = Symbol(
