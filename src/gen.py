@@ -281,7 +281,8 @@ class Generator:
       'fn_proto',
       arg_types=arg_types,
       ret_type=ret_type,
-      name=fn_node.name.value
+      name=fn_node.name.value,
+      is_test=hasattr(fn_node, 'is_test') and fn_node.is_test
     )
 
   def expect(self, cond, error_msg, pos):
@@ -1259,7 +1260,8 @@ class Generator:
         self.convert_proto_to_llvmproto(self.make_proto(
           'fn_proto',
           ret_type=ret_realtype,
-          arg_types=arg_realtypes
+          arg_types=arg_realtypes,
+          is_test=False
         )),
         fn_name
       )
@@ -1495,7 +1497,7 @@ class Generator:
     if realdata_expr.is_comptime_value():
       return RealData(
         realdata_expr.realtype,
-        value=(new_value := not realdata_expr.value),
+        value=(new_value := int(not realdata_expr.value)),
         llvm_data=ll.Constant(self.convert_realtype_to_llvmtype(realdata_expr.realtype), new_value),
       )
 
@@ -2035,6 +2037,10 @@ class Generator:
     if has_terminator:
       return
     
+    if self.cur_fn[0].is_test:
+      self.cur_builder.ret(ll.Constant(ll.IntType(32), 0))
+      return
+    
     if self.cur_fn[0].ret_type.is_void():
       self.cur_builder.ret_void()
       return
@@ -2100,6 +2106,13 @@ def check_main_proto(main_proto, main_pos):
     throw_error()
 
 def gen_llvm_main(llvm_internal_main, g):
+  if llvm_internal_main is None:
+    return ll.Function(
+      g.output,
+      ll.FunctionType(ll.VoidType(), []),
+      'main'
+    )
+
   llvm_main = ll.Function(g.output,
     ll.FunctionType(
       ll.IntType(32),
@@ -2115,6 +2128,62 @@ def gen_llvm_main(llvm_internal_main, g):
   entry.ret(
     entry.call(llvm_internal_main, [llvm_main.args[0], llvm_main.args[1]])
   )
+
+def gen_tests(g):
+  test_identifiers_and_llvm_fns = {}
+
+  for t in g.tests:
+    test_identifier = f'test.`{t.desc}`'
+    
+    if test_identifier in test_identifiers_and_llvm_fns:
+      error('dupplicate test', t.pos)
+    
+    test_sym = Symbol('test_sym', generator=g, node=Node(
+      'fn_node',
+      name=Node('id', value=test_identifier, pos=t.desc.pos),
+      args=[],
+      ret_type=Node('id', value='i32', pos=t.pos),
+      body=t.body,
+      pos=t.pos,
+      is_test=True
+    ))
+  
+    _, llvm_fn, _ = g.gen_nongeneric_fn(test_sym)
+
+    test_identifiers_and_llvm_fns[test_identifier] = (t, llvm_fn)
+  
+  llvm_main = gen_llvm_main(None, g)
+  llvm_builder = ll.IRBuilder(llvm_main.append_basic_block('entry'))
+  llvm_puts = g.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
+  llvm_cstring = ll.PointerType(ll.IntType(8))
+
+  for test_id, (test_node, llvm_fn_test) in test_identifiers_and_llvm_fns.items():
+    failurebr = ll.IRBuilder(llvm_main.append_basic_block('failure_branch'))
+    successebr = ll.IRBuilder(llvm_main.append_basic_block('success_branch'))
+    newbr = ll.IRBuilder(llvm_main.append_basic_block('entry'))
+    success_message = f'[.] passed test at {repr_pos(test_node.pos, use_path=True)}: "{test_node.desc.value}"'
+    failure_message = f'[X] failed test at {repr_pos(test_node.pos, use_path=True)}: "{test_node.desc.value}"'
+
+    # running the test
+    llvm_test_result = llvm_builder.call(llvm_fn_test, [])
+    # checking if the test passed
+    llvm_cmp = llvm_builder.icmp_signed('!=', llvm_test_result, ll.Constant(ll.IntType(32), 0))
+    llvm_builder.cbranch(llvm_cmp, failurebr.block, successebr.block)
+
+    # printing success message
+    llvm_success_message = successebr.bitcast(g.cache_string(success_message, use_bitcast=False), llvm_cstring)
+    successebr.call(llvm_puts, [llvm_success_message])
+    successebr.branch(newbr.block)
+
+    # printing failure message
+    llvm_failure_message = failurebr.bitcast(g.cache_string(failure_message, use_bitcast=False), llvm_cstring)
+    failurebr.call(llvm_puts, [llvm_failure_message])
+    failurebr.branch(newbr.block)
+    
+    # keep running remaining tests
+    llvm_builder = newbr
+  
+  llvm_builder.ret_void()
 
 def gen(g):
   main = get_main(g)

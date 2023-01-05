@@ -1,7 +1,0 @@
--- 1
-
-fn main(argc: u32, argv: **u8) -> i32:
-  x: u8 = 'a'
-  y: i32 = 'b'
-
-  return y - x as i32

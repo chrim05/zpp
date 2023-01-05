@@ -267,6 +267,16 @@ class Parser:
     old_index = self.index
 
     for i, tok in enumerate(pattern_toks):
+      if tok is None:
+        # assert its the last one
+        assert i == len(pattern_toks) - 1
+
+        cur_is_on_new_line = self.cur.is_on_new_line
+        r = self.index - old_index
+        self.index = old_index
+
+        return 0 if cur_is_on_new_line else r + 1
+
       if not self.match_tok(tok, allow_on_new_line=allow_first_on_new_line and i == 0):
         self.index = old_index
         return 0
@@ -559,7 +569,8 @@ class Parser:
     pos = self.consume_cur().pos
     var = None
 
-    if self.match_pattern(['id', ':']):
+    # None stands for any token assuming it's on the same line
+    if self.match_pattern(['id', ':', None]):
       name = self.expect_and_consume('id')
       self.expect_and_consume(':')
       type = self.parse_type()
@@ -690,6 +701,9 @@ class Parser:
     block = []
     self.expect_and_consume(':')
 
+    if not self.cur.is_on_new_line:
+      error('blocks cannot be inlined', self.cur.pos)
+
     if self.cur.indent <= self.cur_indent:
       error('invalid indent', self.cur.pos)
 
@@ -784,6 +798,18 @@ class Parser:
       ids=ids,
       pos=pos
     )
+  
+  def parse_test_node(self):
+    pos = self.consume_cur().pos
+    desc = self.expect_and_consume('str')
+    body = self.parse_block()
+
+    return self.make_node(
+      'test_node',
+      desc=desc,
+      body=body,
+      pos=pos
+    )
 
   def parse_next_global(self):
     if not self.has_tok:
@@ -807,6 +833,9 @@ class Parser:
       
       case 'id':
         node = self.parse_var_decl()
+      
+      case 'test':
+        node = self.parse_test_node()
 
       case _:
         error(f'unexpected token `{self.cur.kind}` here', self.cur.pos)

@@ -1,8 +1,0 @@
--- 294
-
-fn main(argc: u32, argv: **u8) -> i32:
-  x: *u8 = &['a', 'b', 'c'] as *u8
-
-  -- casting each term to avoiding overflow
-  -- if we do `(x[0] + x[1] + ..) as i32` we have UB
-  return x[0] as i32 + x[1] as i32 + x[2] as i32

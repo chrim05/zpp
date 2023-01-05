@@ -1,9 +1,0 @@
--- 3
-
-from "libs/module_to_import2.zpp" import [ stdout, stderr, do_something_with_fd ]
-
-fn main(argc: u32, argv: **u8) -> i32:
-  do_something_with_fd(stdout)
-  do_something_with_fd(stderr)
-
-  return (stdout + stderr) as i32

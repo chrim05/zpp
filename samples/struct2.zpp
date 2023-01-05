@@ -1,9 +1,0 @@
--- 8
-
-fn main(argc: u32, argv: **u8) -> i32:
-  x: (a: i32, b: (k: i32, w: i32)) = (a: 0, b: (k: 1, w: 2))
-  x.a += 1
-  x.b.k = 2
-  x.b.w *= 3
-
-  return x.b.k + x.b.w

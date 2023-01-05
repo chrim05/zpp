@@ -136,6 +136,17 @@ class Node:
       
       case 'array_init_node':
         return f'{self.nodes}'
+      
+      case 'test_node':
+        return f'test {self.desc}{repr_block(self.body)}'
+
+      case 'chr':
+        s = self.value.replace("'", "\\'")
+        return f"'{s}'"
+
+      case 'str':
+        s = self.value.replace('"', '\\"')
+        return f'"{s}"'
 
       case _:
         return self.value

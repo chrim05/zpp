@@ -1,6 +1,8 @@
--- 39
-
 from "libs/module_to_import.zpp" import *
+from "../modules/sys.zpp" import [ Error, Ok, Err ]
+
+from "libs/module_to_import_a.zpp" import [ get_module_name as get_a ]
+from "libs/module_to_import_b.zpp" import [ get_module_name as get_b ]
 
 -- this function will be used by
 -- `module_to_import.zpp` to test
@@ -8,10 +10,16 @@ from "libs/module_to_import.zpp" import *
 fn add(a: i64, b: i64) -> i64:
   return a + b
 
-fn main(argc: u32, argv: **u8) -> i32:
+test "import":
   a: Point = (x: 4, y: 20)
   b: Point = (x: 6, y: 9)
 
   c: Point = point_add(&a, &b)
 
-  return (c.x + c.y) as i32
+  return Ok if c.x + c.y == 39 else Err
+
+test "importing functions with the same name, but different alias":
+  x: *u8 = get_a()
+  y: *u8 = get_b()
+
+  return Ok if x[17] == 'a' and y[17] == 'b' else Err

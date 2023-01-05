@@ -1,8 +1,0 @@
---
-
-fn main(argc: u32, argv: **u8) -> i32:
-  while argc > 1:
-    break
-
-  while true:
-    pass

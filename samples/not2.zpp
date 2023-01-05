@@ -1,7 +1,0 @@
--- 2
-
-fn main(argc: u32, argv: **u8) -> i32:
-  if not true:
-    return 1
-  elif not false:
-    return 2

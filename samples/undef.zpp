@@ -1,9 +1,0 @@
--- 0
-
-type String = (ptr: *u8, len: u64)
-
-fn main(argc: u32, argv: **u8) -> i32:
-  x: i32 = undefined
-  y: String = undefined
-
-  return 0

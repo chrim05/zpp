@@ -11,8 +11,8 @@ def cache_mapast(path, ast):
   path = getabspath(path)
 
   if path not in utils.cache:
-    generator = Generator(None, None, None)
-    m, import_nodes = mapast_except_imports(ast, generator)
+    g = Generator(None, None, None)
+    m, import_nodes, test_nodes = mapast_except_imports(ast, g)
     paths = list(map(
       lambda import_node: get_full_path_from_brother_file(path, import_node.path.value),
       import_nodes
@@ -28,8 +28,8 @@ def cache_mapast(path, ast):
       ] if isinstance(import_node.ids, list) else import_node.ids) for i, import_node in enumerate(import_nodes)
     }
 
-    generator.maps, generator.imports, generator.path = [m], imports, path
-    utils.cache[path] = generator
+    g.maps, g.imports, g.path, g.tests = [m], imports, path, test_nodes
+    utils.cache[path] = g
     mapast_imports(import_nodes, path)
   
   return utils.cache[path]
@@ -37,6 +37,7 @@ def cache_mapast(path, ast):
 def mapast_except_imports(ast_to_map, generator):
   m = MappedAst()
   import_nodes = []
+  test_nodes = []
 
   for glob in ast_to_map:
     match glob.kind:
@@ -65,10 +66,13 @@ def mapast_except_imports(ast_to_map, generator):
       case 'import_node':
         import_nodes.append(glob)
       
+      case 'test_node':
+        test_nodes.append(glob)
+      
       case _:
         raise NotImplementedError()
   
-  return m, import_nodes
+  return m, import_nodes, test_nodes
 
 def mapast_imports(import_nodes, srcpath):
   for glob in import_nodes:
