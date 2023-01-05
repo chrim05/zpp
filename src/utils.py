@@ -70,7 +70,7 @@ def repr_pos(pos, use_path=False):
   r = f'[line: {line}, col: {col}]'
 
   if use_path:
-    r = f'"{path}" {r}'
+    r = f"'{path}' {r}"
 
   return r
 

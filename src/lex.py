@@ -185,7 +185,7 @@ class Lexer:
         't': '\t',
         '0': '\0',
         "'": "'",
-        '"': '"'
+        '`': '`'
       }[c]
     except KeyError:
       error('unknown escaped char', self.cur_pos)
@@ -193,7 +193,7 @@ class Lexer:
   def collect_str_or_chr(self):
     p = self.cur_pos
     apex = self.cur
-    is_str = apex == '"'
+    is_str = apex == "'"
     kind = 'str' if is_str else 'chr'
     self.advance()
     t = ''
@@ -232,7 +232,7 @@ class Lexer:
     
     if self.cur.isalnum() or self.cur == '_':
       t = self.collect_word()
-    elif self.cur in ["'", '"']:
+    elif self.cur in ["'", '`']:
       t = self.collect_str_or_chr()
     else:
       t = self.collect_punctuation()

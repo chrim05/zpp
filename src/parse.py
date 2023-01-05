@@ -78,6 +78,18 @@ class Parser:
     return fields
 
   def parse_type(self):
+    if self.match_tok('fn'):
+      pos = self.consume_cur().pos
+      arg_types, _ = self.parse_fn_args(parse_only_types=True)
+      ret_type = self.parse_fn_ret_type()
+
+      return self.make_node(
+        'fn_type_node',
+        arg_types=arg_types,
+        ret_type=ret_type,
+        pos=pos
+      )
+  
     if self.match_tok('*'):
       pos = self.consume_cur().pos
       is_mut = self.consume_tok_if_match('mut') is not None
@@ -169,21 +181,27 @@ class Parser:
     self.expect_and_consume(closing_tokkind)
     return generics
 
-  def parse_fn_args(self):
+  def parse_fn_args(self, parse_only_types=False):
     args = []
     self.expect_and_consume('(')
 
-    generics = self.parse_generics()
+    if parse_only_types:
+      generics = []
+    else:
+      generics = self.parse_generics()
 
     while True:
       if len(args) == 0 and self.match_tok(')', allow_on_new_line=True):
         break
 
-      name = self.expect_and_consume('id', allow_on_new_line=True)
-      self.expect_and_consume(':')
-      type = self.parse_type()
+      if parse_only_types:
+        args.append(self.parse_type())
+      else:
+        name = self.expect_and_consume('id', allow_on_new_line=True)
+        self.expect_and_consume(':')
+        type = self.parse_type()
 
-      args.append(self.make_node('fn_arg_node', name=name, type=type, pos=name.pos))
+        args.append(self.make_node('fn_arg_node', name=name, type=type, pos=name.pos))
 
       if not self.match_tok(','):
         break
@@ -193,7 +211,7 @@ class Parser:
     self.expect_and_consume(')', allow_on_new_line=True)
     return (args, generics)
   
-  def parse_fn_type(self):
+  def parse_fn_ret_type(self):
     self.expect_and_consume('->')
 
     return self.parse_type()
@@ -344,6 +362,9 @@ class Parser:
     
     # matching call node
     if self.match_toks(['!', '(']):
+      if term.kind != 'id':
+        error('expected id, to invoke pointers use `invoke!()`', term.pos)
+
       is_internal_call = self.consume_tok_if_match('!') is not None
       term = self.parse_call_node(term, is_internal_call)
     
@@ -730,7 +751,7 @@ class Parser:
 
     name = self.expect_and_consume('id')
     args, generics = self.parse_fn_args()
-    ret_type = self.parse_fn_type()
+    ret_type = self.parse_fn_ret_type()
     body = self.parse_block()
 
     return self.make_node(

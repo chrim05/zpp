@@ -65,9 +65,6 @@ class Node:
       case 'type_decl_node':
         return f'type {self.name}{self.generics} = {self.type}'
 
-      case 'call_ptr_node':
-        return f'<call_ptr {self.expr}, {self.args}>'
-
       case 'call_node':
         return f'<call `{self.name.value}`, {self.args}>'
       
@@ -141,12 +138,15 @@ class Node:
         return f'test {self.desc}{repr_block(self.body)}'
 
       case 'chr':
-        s = self.value.replace("'", "\\'")
-        return f"'{s}'"
+        s = self.value.replace("`", "\\`")
+        return f"`{s}`"
 
       case 'str':
-        s = self.value.replace('"', '\\"')
-        return f'"{s}"'
+        s = self.value.replace("'", "\\'")
+        return f"'{s}'"
+      
+      case 'fn_type_node':
+        return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
 
       case _:
         return self.value
@@ -231,6 +231,9 @@ class RealType:
   def is_int(self):
     return self.kind in ['i8_rt', 'i16_rt', 'i32_rt', 'i64_rt', 'u8_rt', 'u16_rt', 'u32_rt', 'u64_rt']
   
+  def is_fn(self):
+    return self.kind == 'fn_rt'
+
   def is_void(self):
     return self.kind == 'void_rt'
   
@@ -326,6 +329,9 @@ class RealType:
       
       case 'placeholder_rt':
         return '<placeholder_type>'
+      
+      case 'fn_rt':
+        return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
 
       case _:
         raise NotImplementedError()

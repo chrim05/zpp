@@ -1,18 +1,18 @@
-from "../modules/io.zpp" import [
+from '../modules/io.zpp' import [
   get_file_stream_size, print, printf
 ]
 
-from "../modules/libc.zpp" import [
+from '../modules/libc.zpp' import [
   OpenModeRead, CFile, fopen, fread, fclose
 ]
 
-from "../modules/mem.zpp" import [
+from '../modules/mem.zpp' import [
   Allocator, create_allocator, drop_allocator,
   allocator_create_seq
 ]
 
-from "../modules/seq.zpp" import [ create_string ]
-from "../modules/sys.zpp" import [ Error, Ok ]
+from '../modules/seq.zpp' import [ create_string ]
+from '../modules/sys.zpp' import [ Error, Ok ]
 
 BadArguments: Error = 1
 NoSuchFile: Error = 2
@@ -21,7 +21,7 @@ ReadFailed: Error = 3
 fn main(argc: u32, argv: **u8) -> Error:
   -- we need a path
   if argc != 2:
-    try print("expected '1' argument\n")
+    try print('expected `1` argument\n')
     return BadArguments
 
   -- opening a file using libc
@@ -31,7 +31,7 @@ fn main(argc: u32, argv: **u8) -> Error:
 
   -- checking that the file is correctly opened
   if file_stream == null:
-    try printf(fmt!("no such file: '%'\n", create_string(argv[1])))
+    try printf(fmt!('no such file: `%`\n', create_string(argv[1])))
     return NoSuchFile
 
   -- setting up a fixed allocator with, as starting size,

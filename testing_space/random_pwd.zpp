@@ -1,23 +1,23 @@
-from "../modules/mem.zpp" import [
+from '../modules/mem.zpp' import [
   Allocator,
   create_allocator, drop_allocator,
   dynallocator_create_seq
 ]
 
-from "../modules/seq.zpp" import [ String ]
-from "../modules/io.zpp" import [ printf ]
-from "../modules/libc.zpp" import [ srand, rand, time ]
+from '../modules/seq.zpp' import [ String ]
+from '../modules/io.zpp' import [ printf ]
+from '../modules/libc.zpp' import [ srand, rand, time ]
 
--- returns whether `c` is '0'..'9', 'a'..'z' or 'A'..'Z'
+-- returns whether `c` is `0`..`9`, `a`..`z` or `A`..`Z`
 fn is_alphanum(c: u8) -> u8:
   return \
-    (c >= '0' and c <= '9') or \
-    (c >= 'a' and c <= 'z') or \
-    (c >= 'A' and c <= 'Z')
+    (c >= `0` and c <= `9`) or \
+    (c >= `a` and c <= `z`) or \
+    (c >= `A` and c <= `Z`)
 
 -- return a random number in range `min..=max` (both included)
 fn rand_int(|T| min: T, max: T) -> T:
-  assert!(min < max, "`min` is expected to be smaller than `max`")
+  assert!(min < max, '`min` is expected to be smaller than `max`')
 
   return (rand() as T % (max + 1)) + min
 
@@ -37,9 +37,9 @@ fn generate_random_pwd(allocator: *mut Allocator, len: u64) -> String:
     c: u8 = 0
 
     -- we keep generating the char
-    -- until it's an alphanum one
+    -- until it`s an alphanum one
     while not is_alphanum(c):
-      c = rand_int(|u8| '0', 'z')
+      c = rand_int(|u8| `0`, `z`)
 
     -- we write it to the output buffer
     ptr[i] = c
@@ -50,6 +50,6 @@ fn main(argc: u32, argv: **u8) -> i32:
   allocator: Allocator = create_allocator(16)
   defer drop_allocator(&mut allocator)
   
-  try printf(fmt!("password: '%'\n", generate_random_pwd(&mut allocator, 16))) as i32
+  try printf(fmt!('password: `%`\n', generate_random_pwd(&mut allocator, 16))) as i32
 
   return 0

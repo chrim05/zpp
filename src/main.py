@@ -79,13 +79,13 @@ def run_tests():
       print('passed')
 '''
 
-def compile_file(srcpath, is_test):
+def compile_file(srcpath, is_test, has_to_be_runned):
   _, _, _, _, llvm_ir, path = compile(srcpath, is_test)
   tmp_folder = fixpath(gettempdir())
   llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(path)}.ll'
   clang_flags = '-O3' if is_release_build() in argv else ''
 
-  if is_test:
+  if has_to_be_runned:
     output_filepath = f'{tmp_folder}/{get_filename_from_path(path)}.exe'
   else:
     output_filepath = change_extension_of_path(path, 'exe')
@@ -99,8 +99,14 @@ def compile_file(srcpath, is_test):
   if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:
     error(f'clang error, exitcode: {exitcode}', None)
   
-  if is_test:
-    system(output_filepath)
+  if has_to_be_runned:
+    try:
+      args = argv[argv.index('--') + 1:]
+      args = ' '.join(map(lambda arg: f'"{arg}"' if ' ' in arg else arg, args))
+    except ValueError:
+      args = ''
+    
+    system(f'{output_filepath} {args}')
 
 def collect_zpp_files_in_dir(path):
   return [f'{path}/{elem}' for elem in listdir(path) if elem.endswith('.zpp')]
@@ -111,15 +117,15 @@ def main():
     print(repr(llvm_ir))
     return
 
-  if argv[1] != 'test':
-    compile_file(argv[1], False)
+  if argv[1] not in ['test', 'run']:
+    compile_file(argv[1], False, False)
     return
   
   srcpath = argv[2]
-  files = collect_zpp_files_in_dir(srcpath) if isdir(srcpath) else [srcpath]
+  files = collect_zpp_files_in_dir(srcpath) if isdir(srcpath) and argv[1] == 'test' else [srcpath]
   
   for file in files:
-    compile_file(file, True)
+    compile_file(file, argv[1] == 'test', True)
 
 if __name__ == '__main__':
   main()

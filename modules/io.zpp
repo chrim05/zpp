@@ -1,6 +1,6 @@
-from "seq.zpp" import [ Array, String ]
-from "sys.zpp" import [ Error, Ok ]
-from "libc.zpp" import [
+from 'seq.zpp' import [ Array, String ]
+from 'sys.zpp' import [ Error, Ok ]
+from 'libc.zpp' import [
   CFile,
   SeekEnd, SeekStart,
   fwrite,

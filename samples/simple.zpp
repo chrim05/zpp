@@ -1,7 +1,7 @@
 -- todo:
 -- + implement union
 
-from "../modules/sys.zpp" import [ Error, Ok ]
+from '../modules/sys.zpp' import [ Error, Ok ]
 
-fn main(argc: u32, argv: **u8) -> i32:
-  return 0
+fn main(argc: u32, argv: **u8) -> Error:
+  return Ok

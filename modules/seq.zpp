@@ -1,4 +1,4 @@
-from "libc.zpp" import [ strlen ]
+from 'libc.zpp' import [ strlen ]
 
 -- dynamic sequence of elements of type 'T'
 type List[T] = (ptr: *mut T, len: u64, cap: u64)
@@ -28,3 +28,22 @@ fn cstr_len(cstr: *u8) -> u64:
 -- there is no allocation, the 'ptr' field is just the 'cstr' param
 fn create_string(cstr: *u8) -> String:
   return (ptr: cstr, len: cstr_len(cstr))
+
+-- [TODO: write an optimized algorithm for this operation,
+-- ..using u64 instead of u8 to compare elements of the string]
+-- return true when 'left' and 'right' are equal
+-- when 'ptr' is null the string is generally considered empty
+--
+-- [NOTE: if 'ptr' is null and 'len' > 1 the function will panic]
+fn string_eq(left: String, right: String) -> u8:
+  assert!(left.ptr != null or left.len == 0, '(about param `left`) `ptr = null` implies `len = 0`')
+  assert!(right.ptr != null or right.len == 0, '(about param `right`) `ptr = null` implies `len = 0`')
+  
+  if left.len != right.len:
+    return false
+
+  for i: u64 = 0, i < left.len, i += 1:
+    if left.ptr[i] != right.ptr[i]:
+      return false
+  
+  return true

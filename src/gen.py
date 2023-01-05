@@ -230,7 +230,7 @@ class Generator:
 
     return r
 
-  def evaluate_type(self, type_node, is_top_call=True, allow_void_type=False):
+  def evaluate_type(self, type_node, is_top_call=True, allow_void_type=False, allow_fn_type=False):
     match type_node.kind:
       case 'id':
         t = self.evaluate_builtin_type(type_node.value)
@@ -243,7 +243,7 @@ class Generator:
         r = self.evaluate_named_generic_type(type_node)
       
       case 'ptr_type_node':
-        r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False))
+        r = RealType('ptr_rt', is_mut=type_node.is_mut, type=self.evaluate_type(type_node.type, is_top_call=False, allow_fn_type=True))
       
       case 'array_type_node':
         length = self.evaluate_node(type_node.length, RealType('u64_rt'))
@@ -263,6 +263,13 @@ class Generator:
           fields={
             field.name.value: self.evaluate_type(field.type, is_top_call=False) for field in type_node.fields
           }
+        )
+      
+      case 'fn_type_node':
+        return RealType(
+          'fn_rt',
+          arg_types=[self.evaluate_type(arg_type) for arg_type in type_node.arg_types],
+          ret_type=self.evaluate_type(type_node.ret_type, allow_void_type=True)
         )
 
       case _:
@@ -345,6 +352,9 @@ class Generator:
     
     if is_top_call and t.realtype.kind == 'placeholder_rt':
       error('expression has no clear type here', node.pos)
+    
+    if is_top_call and t.realtype.is_fn():
+      error('expression has no concrete type here', node.pos)
 
     return t
 
@@ -691,6 +701,10 @@ class Generator:
 
     checker(realdata_left, bin_node.left.pos)
     checker(realdata_right, bin_node.right.pos)
+
+    '''if bin_node.op.kind in ['==', '!='] and 'ptr' in [realdata_left.realtype.kind, realdata_right.realtype.kind]:
+      # this will launch an error whether left and right types are of different classes
+      self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)'''
     
     if realdata_left.is_comptime_value():
       new_realtype = realdata_left.realtype = realdata_right.realtype
@@ -1157,6 +1171,56 @@ class Generator:
       generic_realtype,
       llvm_data=self.cur_builder.inttoptr(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
     )
+
+  def evaluate_internal_call_to_invoke(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count > 0)
+    realdata_args = []
+
+    fn_realdata = self.evaluate_node(call_node.args[0], REALTYPE_PLACEHOLDER)
+    fn_arg_nodes = call_node.args[1:]
+
+    if fn_realdata.realtype.kind != 'ptr_rt' or fn_realdata.realtype.type.kind != 'fn_rt':
+      error(f'expected fn expression, got `{fn_realdata.realtype}`', call_node.args[0])
+    
+    fn_realtype = fn_realdata.realtype.type
+    
+    for i, arg_node in enumerate(fn_arg_nodes):
+      realdata_args.append(realdata_arg := self.evaluate_node(arg_node, proto_arg_type := fn_realtype.arg_types[i]))
+      self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
+
+    llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
+    llvm_call = self.llvm_call(self.cur_builder, fn_realdata.llvm_data, llvm_args)
+
+    return RealData(
+      fn_realtype.ret_type,
+      llvm_data=llvm_call
+    )
+
+  def evaluate_internal_call_to_fn2ptr(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 1)
+
+    fn_name = self.expect_node_is_id(call_node.args[0])
+    sym = self.get_symbol(fn_name, call_node.args[0].pos)
+
+    check_sym_is_fn(fn_name, sym)
+    
+    if len(sym.node.generics) != 0:
+      error('generic function cannot be addressed', call_node.args[0].pos)
+    
+    proto, llvm_data, _ = self.gen_nongeneric_fn(sym)
+
+    resulting_realtype = RealType('ptr_rt', is_mut=False, type=RealType(
+      'fn_rt',
+      arg_types=proto.arg_types,
+      ret_type=proto.ret_type
+    ))
+    
+    return RealData(
+      resulting_realtype,
+      llvm_data=llvm_data
+    )
   
   '''
   def evaluate_internal_call_to_cstr(self, call_node):
@@ -1270,7 +1334,13 @@ class Generator:
 
   def expect_node_is_literal_str(self, node):
     if node.kind != 'str':
-      error('expected literal string containing the internal function name', node.pos)
+      error('expected literal string', node.pos)
+    
+    return node.value
+    
+  def expect_node_is_id(self, node):
+    if node.kind != 'id':
+      error('expected id', node.pos)
     
     return node.value
   
@@ -1674,6 +1744,7 @@ class Generator:
     if self.ctx == CSTRING_REALTYPE:
       return RealData(
         CSTRING_REALTYPE,
+        realtype_is_coerced=None,
         value=tok.value,
         llvm_data=llvm_data
       )
@@ -1684,6 +1755,7 @@ class Generator:
 
     return RealData(
       STRING_REALTYPE,
+      realtype_is_coerced=None,
       value=tok.value,
       llvm_data=llvm_data
     )
@@ -1784,6 +1856,15 @@ class Generator:
           realtype.fields.items()
         )))
 
+      case 'fn_rt':
+        return ll.FunctionType(
+          self.convert_realtype_to_llvmtype(realtype.ret_type, in_progress_struct_rd_ids),
+          [self.convert_realtype_to_llvmtype(
+            arg_type,
+            in_progress_struct_rd_ids
+          ) for arg_type in realtype.arg_types]
+        )
+      
       case 'placeholder_rt':
         return ll.IntType(2)
 
@@ -2161,8 +2242,8 @@ def gen_tests(g):
     failurebr = ll.IRBuilder(llvm_main.append_basic_block('failure_branch'))
     successebr = ll.IRBuilder(llvm_main.append_basic_block('success_branch'))
     newbr = ll.IRBuilder(llvm_main.append_basic_block('entry'))
-    success_message = f'[.] passed test at {repr_pos(test_node.pos, use_path=True)}: "{test_node.desc.value}"'
-    failure_message = f'[X] failed test at {repr_pos(test_node.pos, use_path=True)}: "{test_node.desc.value}"'
+    success_message = f'[.] passed test at {repr_pos(test_node.pos, use_path=True)}: {test_node.desc}'
+    failure_message = f'[X] failed test at {repr_pos(test_node.pos, use_path=True)}: {test_node.desc}'
 
     # running the test
     llvm_test_result = llvm_builder.call(llvm_fn_test, [])

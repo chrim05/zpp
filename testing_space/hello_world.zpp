@@ -1,4 +1,6 @@
-from "../modules/libc.zpp" import [ puts ]
+from '../modules/io.zpp' import [ print ]
+from '../modules/sys.zpp' import [ Error, Ok ]
 
-fn main(argc: u32, argv: **u8) -> i32:
-  return puts("hello world!")
+fn main(argc: u32, argv: **u8) -> Error:
+  try print('hello world!\n')
+  return Ok
