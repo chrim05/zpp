@@ -25,6 +25,9 @@ def compile(path):
   utils.cache = {}
   utils.output = Module(name=path)
   utils.libs_to_import = set()
+  utils.llvm_internal_functions_cache = {}
+  utils.strings_cache = {}
+  utils.llvm_internal_vars_cache = {}
 
   toks = lex(src, path)
   ast = parse(toks)

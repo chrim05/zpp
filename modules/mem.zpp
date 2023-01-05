@@ -2,28 +2,22 @@ from "seq.zpp" import [ List ]
 from "libc.zpp" import [ malloc, free, memcopy ]
 from "dbg.zpp" import [ panic ]
 
---
 -- Allocator helps managing manually allocated memory
 -- on the heap, it provides methods to safely
 -- allocate/release/.. chunks of memory
---
 type Allocator = List[u8]
 
---
 -- [NOTE: remember using 'drop_allocator']
 -- create an instance of 'Allocator' of 'cap' bytes on to
 -- the heap using libc 'malloc'
---
 fn create_allocator(cap: u64) -> Allocator:
   ptr: *mut u8 = malloc(cap)
   len: u64 = 0
 
   return (ptr: ptr, len: len, cap: cap)
 
---
 -- release the allocation owned by 'self'
 -- using libc 'free'
---
 fn drop_allocator(self: *mut Allocator) -> void:
   free(self->ptr)
 
@@ -31,18 +25,14 @@ fn drop_allocator(self: *mut Allocator) -> void:
   self->len = 0
   self->cap = 0
 
---
 -- allocate a sequence of '1' element of type 'T'
 -- return non-nullable pointer
---
 fn allocator_create_single(|T| self: *mut Allocator) -> *mut T:
   return allocator_create_seq(|T| self, 1)
 
---
 -- allocate a sequence of 'len' elements of type 'T'
 -- panic is launched when the allocator has no more space
 -- return non-nullable pointer
---
 fn allocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
   result: *mut T = int2ptr!(|*mut T| ptr2int!(|u64| self->ptr) + self->len)
   self->len += type_size!(|T|) * len
@@ -51,19 +41,15 @@ fn allocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
 
   return result
 
---
 -- allocate a sequence of '1' element of type 'T'
 -- 'self' allocator is resized when the internal allocation has no more space
 -- return non-nullable pointer
---
 fn dynallocator_create_single(|T| self: *mut Allocator) -> *mut T:
   return dynallocator_create_seq(|T| self, 1)
 
---
 -- allocate a sequence of 'len' elements of type 'T'
 -- 'self' allocator is resized when the internal allocation has no more space
 -- return non-nullable pointer
---
 fn dynallocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
   target_len: u64 = self->len + type_size!(|T|) * len
 
@@ -73,11 +59,9 @@ fn dynallocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
 
   return allocator_create_seq(|T| self, len)
 
---
 -- reallocate the internal allocation of 'self' allocator to
 -- to 'new_cap' bytes ('new_cap' is expected to be bigger than the actual cap)
 -- all the old content is copied into the new allocation
---
 fn allocator_resize(self: *mut Allocator, new_cap: u64) -> void:
   assert!(new_cap > self->cap, "'new_cap' is expected to be bigger than the actual capacity")
 

@@ -1,10 +1,12 @@
-import 'std:rand.zpp' ( Random, init_random, rand_int )
-import 'std:debug.zpp' ( expect )
+from "../modules/mem.zpp" import [
+  Allocator,
+  create_allocator, drop_allocator,
+  dynallocator_create_seq
+]
 
-import 'std:mem.zpp' (
-  Chunk, chunk_alloc, drop_chunk,
-  init_rchunk = init_resizable_chunk
-)
+from "../modules/seq.zpp" import [ String ]
+from "../modules/io.zpp" import [ printf ]
+from "../modules/libc.zpp" import [ srand, rand, time ]
 
 -- returns whether `c` is '0'..'9', 'a'..'z' or 'A'..'Z'
 fn is_alphanum(c: u8) -> u8:
@@ -13,37 +15,41 @@ fn is_alphanum(c: u8) -> u8:
     (c >= 'a' and c <= 'z') or \
     (c >= 'A' and c <= 'Z')
 
+-- return a random number in range `min..=max` (both included)
+fn rand_int(|T| min: T, max: T) -> T:
+  assert!(min < max, "`min` is expected to be smaller than `max`")
+
+  return (rand() as T % (max + 1)) + min
+
 -- the function generates an alphanum random password
--- `chunk` is required to allocate the output buffer
--- the function allocates `len` bytes to `chunk`
+-- `allocator` is required to allocate the output buffer
+-- the function allocates `len` bytes to `allocator`
+--
 -- the used algorithm is generally O(n)
-fn generate_random_pwd(chunk: *mut Chunk, len: u8) -> String:
+fn generate_random_pwd(allocator: *mut Allocator, len: u64) -> String:
   -- allocating the output buffer
-  ptr: *mut u8 = chunk_alloc(chunk, len as u64)
+  ptr: *mut u8 = dynallocator_create_seq(|u8| allocator, len)
   -- initializing the random generator
-  rnd: Random = init_random()
+  srand(time(null) as u32)
 
   -- for `len` times
-  for .., len > 0, len -= 1:
-    i: u8 = 0
+  for i: u64 = 0, i < len, i += 1:
+    c: u8 = 0
 
     -- we keep generating the char
     -- until it's an alphanum one
-    while not is_alphanum(i):
-      i = rand_int(|u8| &mut rnd, '0', 'z')
+    while not is_alphanum(c):
+      c = rand_int(|u8| '0', 'z')
 
     -- we write it to the output buffer
-    ptr[len - 1] = i
+    ptr[i] = c
 
-  return (len: len as u64, ptr: ptr as *u8)
+  return (ptr: ptr as *u8, len: len)
 
-test 'simple':
-  chunk: Chunk = init_rchunk(16)
-  defer drop_chunk(&mut chunk)
+fn main(argc: u32, argv: **u8) -> i32:
+  allocator: Allocator = create_allocator(16)
+  defer drop_allocator(&mut allocator)
+  
+  try printf(fmt!("password: '%'\n", generate_random_pwd(&mut allocator, 16))) as i32
 
-  output: String = generate_random_pwd(&mut chunk, 16)
-
-  expect!(output.len == 16)
-
-  for i: u64 = 0, i < output.len, i += 1:
-    expect!(is_alphanum(output.ptr[i]))
+  return 0

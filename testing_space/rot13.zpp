@@ -11,25 +11,18 @@ from "../modules/seq.zpp" import [
 
 from "../modules/libc.zpp" import [ puts ]
 
---
 -- returns whether `c` is 'a'..'z'
---
 fn is_lower(c: u8) -> u8:
   return c >= 'a' and c <= 'z'
 
---
 -- returns whether `c` is 'A'..'Z'
---
 fn is_upper(c: u8) -> u8:
   return c >= 'A' and c <= 'Z'
 
---
 -- returns whether `c` is 'a'..'z' or 'A'..'Z'
---
 fn is_alpha(c: u8) -> u8:
   return is_lower(c) or is_upper(c)
 
---
 -- the function encrypts or decrypts `source` into a new buffer.
 -- `allocator` is used to allocate the output buffer.
 -- the function allocates `source->len + 1` bytes using `allocator` (
@@ -38,7 +31,6 @@ fn is_alpha(c: u8) -> u8:
 -- )
 --
 -- the used algorithm is generally O(n)
---
 fn process(allocator: *mut Allocator, source: *String) -> String:
   -- allocating the output buffer
   ptr: *mut u8 = dynallocator_create_seq(|u8| allocator, source->len + 1)

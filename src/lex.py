@@ -73,11 +73,22 @@ class Lexer:
           self.indent += 1
         
         case '\\':
-          if not self.on_new_line:
-            error('token `\\` can only be used as first character of the line', self.cur_pos)
-
+          if self.on_new_line:
+            error('token `\\` can only be used as last character of the line', self.cur_pos)
+          
+          # skipping `\`
+          self.advance()
+          
+          while self.has_char and self.cur in [' ', '\t']:
+            self.advance()
+          
+          if not self.has_char or self.cur != '\n':
+            error('expected token on new line after `\\`', self.cur_pos)
+          
+          self.indent = 0
+          self.line += 1
+          self.start_line_index = self.index + 1
           self.on_new_line = False
-          self.indent = 1
         
         case '\t':
           error('tab illegal', self.cur_pos)

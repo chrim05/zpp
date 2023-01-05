@@ -1,5 +1,6 @@
 from "../modules/io.zpp" import [ printf, print ]
 from "../modules/seq.zpp" import [ Array, create_string ]
+from "../modules/.zpp" import [ Array, create_string ]
 
 fn main(argc: u32, argv: **u8) -> i32:
   for i: u32 = 1, i < argc, i += 1:

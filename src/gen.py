@@ -39,20 +39,20 @@ class Generator:
     self.imports = imports
     self.output = utils.output
     self.libs_to_import = utils.libs_to_import
+    self.llvm_internal_functions_cache = utils.llvm_internal_functions_cache
+    self.strings = utils.strings_cache
+    self.llvm_internal_vars_cache = utils.llvm_internal_vars_cache
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
     self.global_evaluated = []
     self.namedtypes_in_evaluation = ComparatorDict()
-    self.llvm_internal_fn_evaluated = ComparatorDict()
     self.llvm_builders = [] # the last one is the builder in use
     self.ctx_types = []
     self.loops = []
     self.tmp_counter = 0
     self.str_counter = 0
     self.internal_vars = 0
-    self.strings = {}
     self.defer_stmts = []
-    self.llvm_internal_vars = {}
   
   @property
   def defer_nodes(self):
@@ -530,114 +530,118 @@ class Generator:
   def ctx_if_numeric_or(self, alternative_rt):
     return self.ctx if self.ctx.is_numeric() else alternative_rt
 
-  def evaluate_andor_node(self, bin_node):
-    def restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder):
-      self.cur_fn[1].remove_basic_block(llvm_block_left_is_true)
-      self.cur_fn[1].remove_basic_block(llvm_block_left_is_false)
-      self.cur_builder = old_builder
+  def evaluate_or_node(self, bin_node):
+    '''
+    # a or b
+    r = undefined
+    if a:
+      r = true
+    else:
+      r = b
+    '''
 
-      if previous_builder_maxindex is None:
-        return
+    realtype = self.ctx_if_int_or(RealType('u8_rt'))
 
-      for _ in range(previous_builder_maxindex, len(self.cur_builder.block.instructions)):
-        self.cur_builder.remove(self.cur_builder.block.instructions[-1])
-
-    is_and = bin_node.op.kind == 'and'
-
-    llvm_block_left_is_true = self.cur_fn[1].append_basic_block('left_is_true_branch' if is_and else 'left_is_false_branch')
-    llvm_block_left_is_false = self.cur_fn[1].append_basic_block('left_is_false_branch' if is_and else 'left_is_true_branch')
-
-    previous_builder_maxindex = len(self.cur_builder.block.instructions)
-    realdata_left = self.evaluate_node(bin_node.left, self.ctx_if_int_or(RealType('u8_rt')), is_top_call=False)
-    self.llvm_cbranch(
-      self.cur_builder,
-      realdata_left.llvm_data,
-      llvm_block_left_is_true if is_and else llvm_block_left_is_false,
-      llvm_block_left_is_false if is_and else llvm_block_left_is_true
+    and_result_var_name = self.create_internal_var_name(bin_node.pos)
+    and_result_var_node = Node(
+      'var_decl_node',
+      pos=bin_node.pos,
+      name=and_result_var_name,
+      type=realtype,
+      expr=Node('undefined', value='undefined', pos=bin_node.pos)
     )
 
-    old_builder = self.cur_builder
-    llvm_block_phi_init = self.cur_builder.block
-    self.cur_builder = ll.IRBuilder(llvm_block_left_is_true)
-    realdata_right = self.evaluate_node(bin_node.right, self.ctx_if_int_or(RealType('u8_rt')), is_top_call=False)
-    self.cur_builder.branch(llvm_block_left_is_false)
-
-    if realdata_left.realtype_is_coercable():
-      realdata_left.realtype = realdata_right.realtype
-
-    if realdata_right.realtype_is_coercable():
-      realdata_right.realtype = realdata_left.realtype
-    
-    self.expect_realdata_is_integer(realdata_left, bin_node.left.pos)
-    self.expect_realdata_is_integer(realdata_right, bin_node.right.pos)
-    self.expect_realtype_are_compatible(realdata_left.realtype, realdata_right.realtype, bin_node.pos)
-
-    realtype = realdata_left.realtype
-    llvm_type = self.convert_realtype_to_llvmtype(realtype)
-
-    if realdata_left.is_comptime_value() and realdata_right.is_comptime_value():
-      restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
-
-      return self.evaluate_num(
-        Node(
-          'num',
-          value=str(realdata_left.value and realdata_right.value) if is_and else str(realdata_left.value or realdata_right.value),
-          pos=bin_node.pos
-        ),
-        realtype_to_use=realtype
+    and_node = Node(
+      'if_node',
+      pos=bin_node.pos,
+      if_branch=Node(
+        'if_branch_node',
+        pos=bin_node.pos,
+        cond=bin_node.left,
+        body=[Node(
+          'assignment_node',
+          pos=bin_node.pos,
+          lexpr=and_result_var_name,
+          op=Node('=', value='=', pos=bin_node.pos),
+          rexpr=Node('true', value='true', pos=bin_node.pos)
+        )]
+      ),
+      elif_branches=[],
+      else_branch=Node(
+        'else_branch_node',
+        pos=bin_node.pos,
+        body=[Node(
+          'assignment_node',
+          pos=bin_node.pos,
+          lexpr=and_result_var_name,
+          op=Node('=', value='=', pos=bin_node.pos),
+          rexpr=bin_node.right
+        )]
       )
-    elif realdata_left.is_comptime_value():
-      if not is_and and realdata_left.value == 1:
-        restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
-        
-        return RealData(
-          realtype,
-          value=1,
-          llvm_data=ll.Constant(llvm_type, 1)
-        )
-
-      if is_and and realdata_left.value == 0:
-        restore_previous_state(previous_builder_maxindex, llvm_block_left_is_true, llvm_block_left_is_false, old_builder)
-
-        return RealData(
-          realtype,
-          value=0,
-          llvm_data=ll.Constant(llvm_type, 0)
-        )
-    elif realdata_right.is_comptime_value():
-      if not is_and and realdata_right.value == 1:
-        self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
-
-        return RealData(
-          realtype,
-          value=1,
-          llvm_data=ll.Constant(llvm_type, 1)
-        )
-
-      if is_and and realdata_right.value == 0:
-        self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
-
-        return RealData(
-          realtype,
-          value=0,
-          llvm_data=ll.Constant(llvm_type, 0)
-        )
-
-    self.cur_builder = ll.IRBuilder(llvm_block_left_is_false)
-
-    llvm_data = self.llvm_phi(
-      self.cur_builder, [
-        (ll.Constant(llvm_type, 0 if is_and else 1), llvm_block_phi_init),
-        (realdata_right.llvm_data, llvm_block_left_is_true)
-      ],
-      llvm_type
     )
 
-    return RealData(
-      realtype,
-      llvm_data=llvm_data
+    # print(f'# for `{bin_node}`')
+    # print(and_result_var_node)
+    # print(and_node)
+
+    self.evaluate_var_decl_node_stmt(and_result_var_node, type_is_already_evaluated=True)
+    self.evaluate_if_node_stmt(and_node)
+
+    return self.evaluate_node(and_result_var_name, REALTYPE_PLACEHOLDER)
+
+  def evaluate_and_node(self, bin_node):
+    '''
+    # a and b
+    r = false
+    if a:
+      r = b
+    '''
+
+    realtype = self.ctx_if_int_or(RealType('u8_rt'))
+
+    and_result_var_name = self.create_internal_var_name(bin_node.pos)
+    and_result_var_node = Node(
+      'var_decl_node',
+      pos=bin_node.pos,
+      name=and_result_var_name,
+      type=realtype,
+      expr=Node('false', value='false', pos=bin_node.pos)
     )
 
+    and_node = Node(
+      'if_node',
+      pos=bin_node.pos,
+      if_branch=Node(
+        'if_branch_node',
+        pos=bin_node.pos,
+        cond=bin_node.left,
+        body=[Node(
+          'assignment_node',
+          pos=bin_node.pos,
+          lexpr=and_result_var_name,
+          op=Node('=', value='=', pos=bin_node.pos),
+          rexpr=bin_node.right
+        )]
+      ),
+      elif_branches=[],
+      else_branch=None
+    )
+
+    # print(f'# for `{bin_node}`')
+    # print(and_result_var_node)
+    # print(and_node)
+
+    self.evaluate_var_decl_node_stmt(and_result_var_node, type_is_already_evaluated=True)
+    self.evaluate_if_node_stmt(and_node)
+
+    return self.evaluate_node(and_result_var_name, REALTYPE_PLACEHOLDER)
+
+  def evaluate_andor_node(self, bin_node):
+    return \
+      self.evaluate_and_node(bin_node) \
+        if bin_node.op.kind == 'and' else \
+          self.evaluate_or_node(bin_node)
+      
   def evaluate_bin_node(self, bin_node):
     if bin_node.op.kind in ['and', 'or']:
       return self.evaluate_andor_node(bin_node)
@@ -1250,8 +1254,8 @@ class Generator:
     )
   
   def cache_lib_fn(self, fn_name, ret_realtype, arg_realtypes):
-    if fn_name not in self.llvm_internal_fn_evaluated:
-      self.llvm_internal_fn_evaluated[fn_name] = ll.Function(
+    if fn_name not in self.llvm_internal_functions_cache:
+      self.llvm_internal_functions_cache[fn_name] = ll.Function(
         self.output,
         self.convert_proto_to_llvmproto(self.make_proto(
           'fn_proto',
@@ -1261,7 +1265,7 @@ class Generator:
         fn_name
       )
 
-    return self.llvm_internal_fn_evaluated[fn_name]
+    return self.llvm_internal_functions_cache[fn_name]
 
   def expect_node_is_literal_str(self, node):
     if node.kind != 'str':

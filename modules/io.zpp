@@ -1,26 +1,20 @@
 from "seq.zpp" import [ Array, String ]
 from "libc.zpp" import [ fwrite, get_stdout, puts ]
 
---
 -- this is useful for 'fmt!()'
---
 type FmtString = Array[String]
 
 Ok: u8 = 0
 IoError: u8 = 1
 
---
 -- print the formatted string to stdout
---
 fn printf(msg: FmtString) -> u8:
   for i: u64 = 0, i < msg.len, i += 1:
     try print(msg.ptr[i])
   
   return Ok
 
---
 -- shortcut for 'fwrite(stdout, ..)'
---
 fn print(msg: String) -> u8:
   count_of_written_elems: u64 = fwrite(
     msg.ptr, type_size!(|u8|), msg.len, get_stdout()

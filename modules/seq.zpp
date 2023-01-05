@@ -1,27 +1,19 @@
 from "libc.zpp" import [ strlen ]
 
---
 -- dynamic sequence of elements of type 'T'
---
 type List[T] = (ptr: *mut T, len: u64, cap: u64)
 
---
 -- static sequence of elements of type 'T'
 -- just a fat pointer
---
 type Array[T] = (ptr: *T, len: u64)
 
---
 -- static sequence of elements of type 'u8'
 -- just a fat pointer
---
 type String = Array[u8]
 
---
 -- return the length of a null terminated string
 -- the resulting length does not take into account the null terminator
 -- when 'cstr' is 'null' return 0
---
 fn cstr_len(cstr: *u8) -> u64:
   if cstr == null:
     return 0
@@ -32,9 +24,7 @@ fn cstr_len(cstr: *u8) -> u64:
   
   return len
 
---
 -- return an instance of 'String' with a fixed length
 -- there is no allocation, the 'ptr' field is just the 'cstr' param
---
 fn create_string(cstr: *u8) -> String:
   return (ptr: cstr, len: cstr_len(cstr))
