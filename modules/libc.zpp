@@ -29,12 +29,53 @@ fn strlen(cstr: *u8) -> u64:
 fn memcopy(source: *u8, target: *mut u8, buffer_size: u64) -> void:
   internal_call!(|*mut u8, *u8, u64, void| "memcpy", target, source, buffer_size)
 
+-- wrap of the c 'FILE*'
+type CFile = *u8
+
 -- source: sequence of elements
 -- elem_size: size in bytes of each element in source
 -- source_len: number of elements in source (NOT: buffer lenght of source in bytes)
--- file_stream: wrap of c 'FILE*'
-fn fwrite(source: *u8, elem_size: u64, source_len: u64, file_stream: *u8) -> u64:
-  return internal_call!(|*u8, u64, u64, *u8, u64| "fwrite", source, elem_size, source_len, file_stream)
+fn fwrite(source: *u8, elem_size: u64, source_len: u64, file_stream: CFile) -> u64:
+  return internal_call!(|*u8, u64, u64, CFile, u64| "fwrite", source, elem_size, source_len, file_stream)
+
+-- target: sequence of elements ('fread' will write into that buffer the file content)
+-- elem_size: size in bytes of each element in source
+-- source_len: number of elements in source (NOT: buffer lenght of source in bytes)
+fn fread(target: *mut u8, elem_size: u64, source_len: u64, file_stream: CFile) -> u64:
+  return internal_call!(|*mut u8, u64, u64, CFile, u64| "fread", target, elem_size, source_len, file_stream)
+
+-- wrap for 'SEEK_SET'
+SeekStart: i32 = 0
+-- wrap for 'SEEK_CUR'
+SeekCurrent: i32 = 1
+-- wrap for 'SEEK_END'
+SeekEnd: i32 = 2
+
+-- offset: number of bytes to add to 'location_kind'
+-- location_kind: it can be 'SeekStart', 'SeekCurrent' or 'SeekEnd'
+-- return '0' when everything worked
+fn fseek(file_stream: CFile, offset: i64, location_kind: i32) -> i32:
+  return internal_call!(|CFile, i64, i32, i32| "fseek", file_stream, offset, location_kind)
+
+-- return the cursor position in the file_stream (in bytes)
+fn ftell(file_stream: CFile) -> i64:
+  return internal_call!(|CFile, i64| "ftell", file_stream)
+
+-- wraps for 'fopen' modes
+OpenModeRead: *u8 = "r"
+OpenModeWrite: *u8 = "w"
+OpenModeAppend: *u8 = "a"
+OpenModeReadWrite: *u8 = "w+"
+OpenModeReadAppend: *u8 = "a+"
+
+-- mode: it can be 'r', 'w', 'a', 'w+', 'a+'
+-- return file stream to that file, null if not found
+fn fopen(file_path: *u8, mode: *u8) -> *u8:
+  return internal_call!(|*u8, *u8, *u8| "fopen", file_path, mode)
+
+-- return '0' when everything worked
+fn fclose(file_stream: CFile) -> i32:
+  return internal_call!(|*u8, i32| "fclose", file_stream)
 
 fn srand(seed: u32) -> void:
   internal_call!(|u32, void| "srand", seed)

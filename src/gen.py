@@ -1,3 +1,4 @@
+from copy import copy
 from sys import argv
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
 from mapast import get_full_path_from_brother_file
@@ -169,7 +170,7 @@ class Generator:
 
   def evaluate_builtin_type(self, name):
     try:
-      return BUILTINS_TABLE[name]
+      return copy(BUILTINS_TABLE[name])
     except KeyError:
       pass
 
@@ -540,14 +541,12 @@ class Generator:
       r = b
     '''
 
-    realtype = self.ctx_if_int_or(RealType('u8_rt'))
-
     and_result_var_name = self.create_internal_var_name(bin_node.pos)
     and_result_var_node = Node(
       'var_decl_node',
       pos=bin_node.pos,
       name=and_result_var_name,
-      type=realtype,
+      type=RealType('u8_rt'),
       expr=Node('undefined', value='undefined', pos=bin_node.pos)
     )
 
@@ -560,7 +559,7 @@ class Generator:
         cond=bin_node.left,
         body=[Node(
           'assignment_node',
-          pos=bin_node.pos,
+          pos=bin_node.left.pos,
           lexpr=and_result_var_name,
           op=Node('=', value='=', pos=bin_node.pos),
           rexpr=Node('true', value='true', pos=bin_node.pos)
@@ -572,7 +571,7 @@ class Generator:
         pos=bin_node.pos,
         body=[Node(
           'assignment_node',
-          pos=bin_node.pos,
+          pos=bin_node.right.pos,
           lexpr=and_result_var_name,
           op=Node('=', value='=', pos=bin_node.pos),
           rexpr=bin_node.right
@@ -613,11 +612,11 @@ class Generator:
       pos=bin_node.pos,
       if_branch=Node(
         'if_branch_node',
-        pos=bin_node.pos,
+        pos=bin_node.left.pos,
         cond=bin_node.left,
         body=[Node(
           'assignment_node',
-          pos=bin_node.pos,
+          pos=bin_node.right.pos,
           lexpr=and_result_var_name,
           op=Node('=', value='=', pos=bin_node.pos),
           rexpr=bin_node.right
@@ -1316,6 +1315,16 @@ class Generator:
       realtype_to_use=self.ctx_if_numeric_or(RealType('u64_rt'))
     )
 
+  def evaluate_internal_call_to_here(self, call_node):
+    self.expect_args_count(call_node, lambda count: count == 0)
+    self.expect_generics_count(call_node, lambda count: count == 0)
+
+    llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
+    message = f'logged `here!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)])
+
+    return RealData(RealType('void_rt'), llvm_data=None)
+
   def evaluate_internal_call_to_fmt(self, call_node):
     self.expect_args_count(call_node, lambda count: count > 1)
     self.expect_generics_count(call_node, lambda count: count == 0)
@@ -1330,7 +1339,7 @@ class Generator:
     
     fmt_array_length = len(divisions) + len(call_node.args) - 1
     llvm_string = self.convert_realtype_to_llvmtype(STRING_REALTYPE)
-    array_of_string_realtype = RealType('struct_rt', fields={ 'ptr': RealType('ptr_rt', is_mut=False, type=STRING_REALTYPE), 'len': RealType('u64_rt') })
+    array_of_string_realtype = RealType('struct_rt', aka='Array[String]', fields={ 'ptr': RealType('ptr_rt', is_mut=False, type=STRING_REALTYPE), 'len': RealType('u64_rt') })
     llvm_array_of_string = self.convert_realtype_to_llvmtype(array_of_string_realtype)
     llvm_fixed_array_of_string = ll.ArrayType(llvm_string, fmt_array_length)
     llvm_data = ll.Constant(llvm_fixed_array_of_string, ll.Undefined)
@@ -1658,7 +1667,7 @@ class Generator:
     )
 
   def evaluate_str(self, tok):
-    llvm_data = self.cache_string(tok.value)
+    llvm_data = self.cache_string(tok.value, use_bitcast=self.ctx != CSTRING_REALTYPE)
 
     if self.ctx == CSTRING_REALTYPE:
       return RealData(
@@ -1677,7 +1686,7 @@ class Generator:
       llvm_data=llvm_data
     )
 
-  def cache_string(self, string):
+  def cache_string(self, string, use_bitcast=True):
     if string not in self.strings:
       self.str_counter += 1
       llvm_data = self.strings[string] = ll.GlobalVariable(
@@ -1691,7 +1700,9 @@ class Generator:
     else:
       llvm_data = self.strings[string]
 
-    return self.cur_builder.bitcast(llvm_data, ll.PointerType(ll.IntType(8)))
+    return \
+      self.cur_builder.bitcast(llvm_data, ll.PointerType(ll.IntType(8))) \
+        if use_bitcast else llvm_data
 
   def evaluate_block(self, block):
     for stmt in block:
@@ -1789,17 +1800,27 @@ class Generator:
         raise NotImplementedError()
 
   def evaluate_defer_nodes(self):
+    if len(self.defer_stmts) == 0 or len(self.defer_nodes) == 0:
+      return
+
+    terminator = None
+    if self.cur_builder.block.is_terminated:
+      terminator = self.cur_builder.block.terminator
+      self.cur_builder.remove(terminator)
+    
+    allocas_terminator = None
+    if self.allocas_builder.block.is_terminated:
+      allocas_terminator = self.allocas_builder.block.terminator
+      self.allocas_builder.remove(allocas_terminator)
+    
     for node in self.defer_nodes:
-      terminator = None
-
-      if self.cur_builder.block.is_terminated:
-        terminator = self.cur_builder.block.terminator
-        self.cur_builder.remove(terminator)
-
-      self.evaluate_node(node, REALTYPE_PLACEHOLDER, is_stmt=True)
-
-      if terminator is not None:
-        self.cur_builder.append(terminator)
+      self.evaluate_stmt(node)
+    
+    if terminator is not None:
+      self.cur_builder.append(terminator)
+    
+    if allocas_terminator is not None:
+      self.allocas_builder.append(allocas_terminator)
 
   def fixname_for_llvm(self, name):
     return f'{self.path}::{name}'

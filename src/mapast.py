@@ -13,11 +13,19 @@ def cache_mapast(path, ast):
   if path not in utils.cache:
     generator = Generator(None, None, None)
     m, import_nodes = mapast_except_imports(ast, generator)
+    paths = list(map(
+      lambda import_node: get_full_path_from_brother_file(path, import_node.path.value),
+      import_nodes
+    ))
+
+    for i, p in enumerate(paths):
+      if paths.count(p) > 1:
+        error('dupplicate import', import_nodes[i].path.pos)
 
     imports = {
-      get_full_path_from_brother_file(path, import_node.path.value): ([
+      paths[i]: ([
         (id.name.value, id.alias.value, id.pos) for id in import_node.ids
-      ] if isinstance(import_node.ids, list) else import_node.ids) for import_node in import_nodes
+      ] if isinstance(import_node.ids, list) else import_node.ids) for i, import_node in enumerate(import_nodes)
     }
 
     generator.maps, generator.imports, generator.path = [m], imports, path

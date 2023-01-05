@@ -1,4 +1,4 @@
-from utils import error, has_infinite_recursive_layout
+from utils import equal_dicts, error, has_infinite_recursive_layout
 
 indent_fmt = '  '
 
@@ -275,7 +275,7 @@ class RealType:
           return self.length == obj.length and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
 
         case _:
-          return self.__dict__ == obj.__dict__
+          return equal_dicts(self.__dict__, obj.__dict__, ['aka'])
       
     for (name1, rt1), (name2, rt2) in zip(self.fields.items(), obj.fields.items()):
       if name1 != name2 or not rt1.internal_eq(rt2, in_progress_struct_rt_ids + [key]):

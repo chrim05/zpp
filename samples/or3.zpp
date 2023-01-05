@@ -6,3 +6,8 @@ fn main(argc: u32, argv: **u8) -> i32:
   if true or n:
     return 1
   
+  -- this wasn't actually needed but due to a bug
+  -- we can't identify a semi-constant result from an or/and
+  -- but for a stage0 is not actually a big deal
+  return 0
+  

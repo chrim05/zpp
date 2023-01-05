@@ -123,3 +123,8 @@ def is_debug_build():
 
 def is_release_build():
   return not is_debug_build()
+
+def equal_dicts(d1, d2, ignore_keys):
+  d1_filtered = { k: v for k,v in d1.items() if k not in ignore_keys }
+  d2_filtered = { k: v for k,v in d2.items() if k not in ignore_keys }
+  return d1_filtered == d2_filtered

@@ -1,2 +1,6 @@
+-- todo:
+-- + implement union
+-- + implement tests and all related internal calls
+
 fn main(argc: u32, argv: **u8) -> i32:
   return 0

@@ -1,21 +1,29 @@
 from "seq.zpp" import [ Array, String ]
-from "libc.zpp" import [ fwrite, get_stdout, puts ]
+from "sys.zpp" import [ Error, Ok ]
+from "libc.zpp" import [
+  CFile,
+  SeekEnd, SeekStart,
+  fwrite,
+  get_stdout,
+  puts,
+  fseek, ftell
+]
+
 
 -- this is useful for 'fmt!()'
 type FmtString = Array[String]
 
-Ok: u8 = 0
-IoError: u8 = 1
+IoError: Error = 1
 
 -- print the formatted string to stdout
-fn printf(msg: FmtString) -> u8:
+fn printf(msg: FmtString) -> Error:
   for i: u64 = 0, i < msg.len, i += 1:
     try print(msg.ptr[i])
   
   return Ok
 
 -- shortcut for 'fwrite(stdout, ..)'
-fn print(msg: String) -> u8:
+fn print(msg: String) -> Error:
   count_of_written_elems: u64 = fwrite(
     msg.ptr, type_size!(|u8|), msg.len, get_stdout()
   )
@@ -23,4 +31,14 @@ fn print(msg: String) -> u8:
   if count_of_written_elems != msg.len:
     return IoError
   
+  return Ok
+
+-- file_stream: wrap of c 'FILE*'
+-- return the size in bytes of the opened file stream
+fn get_file_stream_size(file_stream: CFile, result_size: *mut u64) -> Error:
+  current_position: i64 = ftell(file_stream)
+  try fseek(file_stream, 0, SeekEnd)
+  *result_size = ftell(file_stream) as u64
+  try fseek(file_stream, current_position, SeekStart)
+
   return Ok

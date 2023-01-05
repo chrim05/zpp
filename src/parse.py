@@ -1,6 +1,12 @@
 from data import Node
 from utils import error
 
+ALLOWED_ON_DEFER_NODE = [
+  'pass_node', 'if_node', 'return_node', 'while_node',
+  'break_node', 'continue_node', 'for_node', 'defer_node',
+  'var_decl_node'
+]
+
 class Parser:
   def __init__(self, toks):
     self.toks = toks
@@ -538,7 +544,10 @@ class Parser:
 
   def parse_defer_node(self):
     pos = self.consume_cur().pos
-    node = self.parse_expr()
+    node = self.parse_stmt()
+
+    if node.kind in ALLOWED_ON_DEFER_NODE:
+      error('statement not allowed when using defer', pos)
 
     return self.make_node(
       'defer_node',
