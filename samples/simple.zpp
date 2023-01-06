@@ -1,3 +1,11 @@
+-- todo
+-- + arch!()
+-- + panic!()
+-- + call trace in debug builds
+-- + bitmask operators bitwise_not/xor/etc..
+-- + num literals octal/hex/binary notation
+-- + overflow/index_out_of_bounds/etc.. checking in debug builds
+
 from '../modules/sys.zpp' import [ Error, Ok ]
 
 fn main(argc: u32, argv: **u8) -> Error:

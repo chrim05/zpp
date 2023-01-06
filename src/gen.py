@@ -1439,6 +1439,22 @@ class Generator:
     
     return node.value
   
+  def evaluate_internal_call_to_panic(self, call_node):
+    self.expect_args_count(call_node, lambda count: count in [0, 1])
+    self.expect_generics_count(call_node, lambda count: count == 0)
+
+    llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
+    message = f"reached `panic!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`"
+
+    if len(call_node.args) == 1:
+      custom_msg = self.expect_node_is_literal_str(call_node.args[0]).replace("'", "\\'")
+      message += f": '{custom_msg}'"
+
+    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)])
+    self.cur_builder.unreachable()
+
+    return RealData(RealType('void_rt'), llvm_data=None)
+
   def evaluate_internal_call_to_assert(self, call_node):
     create_result = lambda: RealData(RealType('void_rt'), llvm_data=None)
 
@@ -1453,8 +1469,8 @@ class Generator:
     failure_message = f'failed `assert!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
 
     if len(call_node.args) == 2:
-      custom_msg = self.expect_node_is_literal_str(call_node.args[1]).replace('"', '\\"')
-      failure_message += f': "{custom_msg}"'
+      custom_msg = self.expect_node_is_literal_str(call_node.args[1]).replace("'", "\\'")
+      failure_message += f": '{custom_msg}'"
 
     llvm_truebr = self.cur_fn[1].append_basic_block('assert_success')
     llvm_falsebr = self.cur_fn[1].append_basic_block('assert_failure')
