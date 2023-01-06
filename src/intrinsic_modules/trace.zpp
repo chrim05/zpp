@@ -1,0 +1,93 @@
+-- this is an intrinsic module for traceback stuff
+-- this module is used internally by the compiler
+-- please don't modify its content to keep the
+-- compiler working
+-- this module is responsible for keeping track
+-- of the the calls trace
+
+-- this is the node of the calls trace
+-- `info` represents the description of the trail
+-- `prev_node` is a pointer to the old `trace.last_node`
+-- (now `trace.last_node` is overwritten by the last instance)
+type Trail = (info: *u8, prev_node: *Trail)
+
+-- i implemented the trace using a reversed linked list
+-- this struct keeps track of the calls trace
+-- `last_node` is the most recent trail
+-- that trail contains pointers to the previous and the previous again
+-- etc..
+type Trace = (last_node: *Trail, len: u16)
+
+MaximumRecursionDepth: u16 = 1'000
+
+trace: Trace = undefined
+
+-- an implicit call to this function is emitted
+-- by the compiler in the main to make the trace
+-- to work correctly
+fn setup_trace() -> void:
+  trace.len = 0
+
+-- prints the call trace
+fn print_trace() -> void:
+  .. = internal_call!(|*u8, i32| 'puts', cstr!('Trace (first is the most recent):'))
+
+  -- if we want to avoid crash or ub we need to skip the last element
+  -- when the print_trace is due to max recursion (when we have max recursion error
+  -- we have a wrong length because we increased it before in `trace_push` to avoid
+  -- recursion on `trace_push` itself, so we need to recover the right length by
+  -- subtracting one to actual)
+  -- we can do this by skipping one cycle, and so the one element (the last)
+  skip_one_or_zero: u16 = 1 if trace.len > MaximumRecursionDepth else 0
+  -- the last trail (the most recent)
+  current_trail: *Trail = trace.last_node
+  for i: u16 = skip_one_or_zero, i < trace.len, i += 1:
+    .. = internal_call!(|*u8, i32| 'puts', current_trail->info)
+    -- moving to the previous trail
+    -- (we are iterating backwards)
+    current_trail = current_trail->prev_node
+  
+  -- printing visual separator (`puts` also print a `\n`)
+  .. = internal_call!(|*u8, i32| 'puts', cstr!(''))
+
+fn trace_push(trail: *Trail) -> void:
+  -- read below to understand why there are two
+  -- `if` statements to handle a similar condition
+  if trace.len > MaximumRecursionDepth:
+    return
+
+  if trace.len == MaximumRecursionDepth:
+    -- read below to understand why i'm incrementing the length
+    -- it actually seems to be a useless operation
+    trace.len += 1
+    -- here the compiler emits ~3 instructions
+    -- 1. call print_trace()
+    -- 2. call puts('maximum rec ..')
+    -- 3. unreachable (here the program crashes)
+    -- the problem happens when it goes into `print_trace`
+    -- other calls are made in that function
+    -- (the calls in question are actually just to `puts` of `libc`)
+    -- and those calls also need to be registered in `trace`
+    -- (`trace_push` is used by the compiler to register the trail in `trace`, but since
+    -- `trace.len` is unchanged the program would keep falling back to the same two functions
+    -- over and over again)
+    -- to avoid this i increased the length by 1 so that `trace.len` would henceforth appear
+    -- greater than (and no longer equal) to `MaximumRecursionDepth`.
+    -- the `if` above this in which i am writing takes care of breaking the infinite loop
+    -- when `trace.len` is greater than MaximumRecursionDepth
+    panic!('maximum recursion depth exceeded')
+  
+  -- i replace the last trail of the trace
+  -- with a new trail (statically allocated on the stack by the caller)
+  -- the new trail has a `info` fields which contains the description of the trail
+  -- and a `prev_node` field in which the caller stored `trace.last_node`
+  -- which is exactly the one i'm overwriting
+  trace.last_node = trail
+  trace.len += 1
+
+fn trace_pop() -> void:
+  -- i replace the current last node with
+  -- the old one i saved in the `prev_node` field
+  -- of the current last node
+  trace.last_node = trace.last_node->prev_node
+  trace.len -= 1

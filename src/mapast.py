@@ -1,7 +1,7 @@
 from data import MappedAst, Node, Symbol
 from lex import lex
 from parse import parse
-from utils import error, fixpath, getabspath, var_is_comptime
+from utils import error, fixpath, getabspath, var_is_comptime, get_full_path_from_brother_file
 
 import utils
 
@@ -90,6 +90,3 @@ def mapast_imports(import_nodes, srcpath):
     toks = lex(src, path)
     ast = parse(toks)
     _ = cache_mapast(path, ast)
-
-def get_full_path_from_brother_file(brother_filepath, filepath):
-  return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)

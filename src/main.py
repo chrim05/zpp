@@ -7,7 +7,6 @@ from gen import gen, gen_tests
 from sys import argv
 from utils import *
 from tempfile import gettempdir
-from llvmlite.ir import Module
 
 import utils
 
@@ -22,12 +21,7 @@ def compile(path, gen_tests_instead=False):
   with open(path, 'r') as f:
     src = f.read()
   
-  utils.cache = {}
-  utils.output = Module(name=path)
-  utils.libs_to_import = set()
-  utils.llvm_internal_functions_cache = {}
-  utils.strings_cache = {}
-  utils.llvm_internal_vars_cache = {}
+  setup_globals()
 
   toks = lex(src, path)
   ast = parse(toks)
@@ -96,8 +90,15 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   if '--print-llvm-ir' in argv:
     print(llvm_ir)
   
-  if '--llvm-ir' in argv:
+  if '--emit-llvm-ir' in argv:
     assert not is_test and not has_to_be_runned
+
+    with open(change_extension_of_path(output_filepath, 'll'), 'w') as f:
+      f.write(repr(llvm_ir))
+
+    return
+  
+  if '--no-exe' in argv:
     return
   
   if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:

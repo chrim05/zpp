@@ -2,6 +2,32 @@ from os import getcwd
 from os.path import abspath
 from sys import argv
 
+from llvmlite.ir import Module
+
+def setup_globals():
+  global cache, output, libs_to_import
+  global llvm_internal_functions_cache, strings_cache
+  global llvm_internal_vars_cache, intrinsic_modules
+
+  cache = {}
+  output = Module()
+  libs_to_import = set()
+  llvm_internal_functions_cache = {}
+  strings_cache = {}
+  llvm_internal_vars_cache = {}
+
+  from lex import lex
+  from parse import parse
+  from mapast import cache_mapast
+
+  for m in intrinsic_modules:
+    with open(m) as f:
+      src = f.read()
+
+    toks = lex(src, m)
+    ast = parse(toks)
+    _ = cache_mapast(m, ast)
+
 def error(msg, pos):
   if pos is None:
     exit(f'error: {msg}')
@@ -125,6 +151,13 @@ def is_release_build():
   return not is_debug_build()
 
 def equal_dicts(d1, d2, ignore_keys):
-  d1_filtered = { k: v for k,v in d1.items() if k not in ignore_keys }
-  d2_filtered = { k: v for k,v in d2.items() if k not in ignore_keys }
+  d1_filtered = { k: v for k, v in d1.items() if k not in ignore_keys }
+  d2_filtered = { k: v for k, v in d2.items() if k not in ignore_keys }
   return d1_filtered == d2_filtered
+
+def get_full_path_from_brother_file(brother_filepath, filepath):
+  brother_filepath = fixpath(brother_filepath)
+  return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)
+
+INTRINSICMOD_TRACE_ZPP = get_full_path_from_brother_file(__file__, 'intrinsic_modules/trace.zpp')
+intrinsic_modules = [INTRINSICMOD_TRACE_ZPP]

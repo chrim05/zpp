@@ -2,7 +2,7 @@ from copy import copy
 from sys import argv
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
 from mapast import get_full_path_from_brother_file
-from utils import error, has_infinite_recursive_layout, has_to_import_all_ids, is_debug_build, is_release_build, repr_pos, string_contains_float, var_is_comptime, write_instance_content_to
+from utils import *
 import llvmlite.ir as ll
 
 import utils
@@ -1264,7 +1264,8 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
     llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
-    llvm_call = self.llvm_call(self.cur_builder, fn_realdata.llvm_data, llvm_args)
+    trail_info = f'  invoking function pointer at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    llvm_call = self.llvm_call(self.cur_builder, fn_realdata.llvm_data, llvm_args, (self.allocas_builder, trail_info))
 
     return RealData(
       fn_realtype.ret_type,
@@ -1403,12 +1404,20 @@ class Generator:
       lib_to_import = self.expect_node_is_literal_str(call_node.args[0])
       self.libs_to_import.add(get_full_path_from_brother_file(self.path, lib_to_import))
     
+    if is_internal:
+      trail_info = f'  calling internal `{name_to_call}` '
+    else:
+      trail_info = f'  calling extern `{name_to_call}` from lib `{lib_to_import}` '
+    
+    trail_info += f'at {repr_pos(call_node.pos, use_path=True)} in `{self.cur_fn[0].name}`'
+
     return RealData(
       generic_ret_realtype,
       llvm_data=self.llvm_call(
         self.cur_builder,
         llvm_internal_fn,
-        list(map(lambda arg_rd: arg_rd.llvm_data, arg_realdatas))
+        list(map(lambda arg_rd: arg_rd.llvm_data, arg_realdatas)),
+        None # (self.allocas_builder, trail_info)
       )
     )
   
@@ -1450,7 +1459,8 @@ class Generator:
       custom_msg = self.expect_node_is_literal_str(call_node.args[0]).replace("'", "\\'")
       message += f": '{custom_msg}'"
 
-    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)])
+    emit_print_trace(self.cur_builder)
+    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)], None)
     self.cur_builder.unreachable()
 
     return RealData(RealType('void_rt'), llvm_data=None)
@@ -1478,7 +1488,8 @@ class Generator:
     self.llvm_cbranch(self.cur_builder, realdata.llvm_data, llvm_truebr, llvm_falsebr)
 
     self.push_builder(ll.IRBuilder(llvm_falsebr))
-    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(failure_message)])
+    emit_print_trace(self.cur_builder)
+    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(failure_message)], None)
     self.cur_builder.unreachable()
     self.pop_builder()
 
@@ -1536,7 +1547,7 @@ class Generator:
 
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
     message = f'logged `here!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
-    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)])
+    self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)], None)
 
     return RealData(RealType('void_rt'), llvm_data=None)
 
@@ -1636,7 +1647,8 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
     llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
-    llvm_call = self.llvm_call(self.cur_builder, llvmfn, llvm_args)
+    trail_info = f'  calling `{call_node.name.value}` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    llvm_call = self.llvm_call(self.cur_builder, llvmfn, llvm_args, (self.allocas_builder, trail_info))
 
     return RealData(
       proto.ret_type,
@@ -2156,12 +2168,21 @@ class Generator:
     ptr = builder.bitcast(ptr, ll.PointerType(value.type))
     return builder.store(value, ptr)
   
-  def llvm_call(self, builder, fn, args):
+  def llvm_call(self, builder, fn, args, debug_utils):
     for i, arg in enumerate(args):
       if isinstance(arg.type, ll.PointerType):
         args[i] = builder.bitcast(arg, fn.ftype.args[i])
 
-    return builder.call(fn, args)
+    if debug_utils is not None:
+      allocas_builder, trail_info = debug_utils
+      emit_push_trail(self, builder, allocas_builder, trail_info)
+
+    r = builder.call(fn, args)
+
+    if debug_utils is not None:
+      emit_pop_trail(builder)
+
+    return r
 
   def declare_parameters(self, proto, fn_args):
     for i, (arg_name, arg_realtype) in enumerate(zip(map(lambda a: a.name, fn_args), proto.arg_types)):
@@ -2343,7 +2364,10 @@ def check_main_proto(main_proto, main_pos):
   if main_proto.ret_type.kind != 'i32_rt':
     throw_error()
 
-def gen_llvm_main(llvm_internal_main, g):
+def get_intrinsic_trail_llvmtype():
+  return get_llvmtype_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'Trail')
+
+def gen_llvm_main(llvm_internal_main, g, main_fn_node_pos=None):
   if llvm_internal_main is None:
     return ll.Function(
       g.output,
@@ -2362,16 +2386,101 @@ def gen_llvm_main(llvm_internal_main, g):
     'main'
   )
 
+  allocas = ll.IRBuilder(llvm_main.append_basic_block('allocas'))
   entry = ll.IRBuilder(llvm_main.append_basic_block('entry'))
+
+  emit_setup_trace(entry)
+  trail_info = f'  calling `main` at {repr_pos(main_fn_node_pos, use_path=True)}'
   entry.ret(
-    entry.call(llvm_internal_main, [llvm_main.args[0], llvm_main.args[1]])
+    g.llvm_call(entry, llvm_internal_main, [llvm_main.args[0], llvm_main.args[1]], (allocas, trail_info))
   )
+
+  allocas.branch(entry.block)
+
+def construct_trail_into_alloca(g, trail_alloca):
+  if trail_alloca is None:
+    return
+
+  raise
+
+def get_llvm_fn_from_intrinsicmod(intrinsic_module_path, fn_name):
+  intrinsicmod_g = utils.cache[intrinsic_module_path]
+  fnsym = intrinsicmod_g.base_map.get_symbol(fn_name, None)
+
+  _, llvm_fn, _ = intrinsicmod_g.gen_nongeneric_fn(fnsym)
+
+  return llvm_fn
+
+def get_llvmtype_from_intrinsicmod(intrinsic_module_path, type_name):
+  intrinsicmod_g = utils.cache[intrinsic_module_path]
+  typesym = intrinsicmod_g.base_map.get_symbol(type_name, None)
+
+  realtype = intrinsicmod_g.internal_evaluate_named_type(
+    Node('id', value=type_name, pos=None),
+    typesym
+  )
+
+  return intrinsicmod_g.convert_realtype_to_llvmtype(realtype)
+
+def get_llvm_global_variable_from_intrinsicmod(intrinsic_module_path, var_name):
+  intrinsicmod_g = utils.cache[intrinsic_module_path]
+  varsym = intrinsicmod_g.base_map.get_symbol(var_name, None)
+
+  intrinsicmod_g.evaluate_global_sym(varsym)
+
+  return varsym.llvm_data
+
+def emit_push_trail(g, llvm_builder, llvm_allocas_builder, trail_info):
+  if is_release_build():
+    return
+
+  trail_alloca = llvm_allocas_builder.alloca(trail_llvmtype := get_intrinsic_trail_llvmtype(), name='trail')
+  trace_global_variable = get_llvm_global_variable_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'trace')
+
+  g.push_builder(llvm_builder)
+  llvm_trail_info_cstring = g.cache_string(trail_info)
+  g.pop_builder()
+
+  k = llvm_builder.gep(
+    trace_global_variable,
+    [ll.Constant(ll.IntType(32), 0), ll.Constant(ll.IntType(32), 0)],
+    inbounds=True
+  )
+  k = llvm_builder.load(k)
+  k = llvm_builder.bitcast(k, ll.PointerType(ll.IntType(1)))
+
+  a = ll.Constant(trail_llvmtype, ll.Undefined)
+  b = llvm_builder.insert_value(a, llvm_trail_info_cstring, 0)
+  c = llvm_builder.insert_value(b, k, 1)
+
+  llvm_builder.store(c, trail_alloca)
+
+  trace_push_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'trace_push')
+  llvm_builder.call(trace_push_llvm_fn, [trail_alloca])
+
+def emit_print_trace(llvm_builder):
+  print_trace_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'print_trace')
+  llvm_builder.call(print_trace_llvm_fn, [])
+
+def emit_pop_trail(llvm_builder):
+  if is_release_build():
+    return
+
+  trace_pop_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'trace_pop')
+  llvm_builder.call(trace_pop_llvm_fn, [])
+
+def emit_setup_trace(llvm_builder):
+  if is_release_build():
+    return
+
+  trace_setup_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'setup_trace')
+  llvm_builder.call(trace_setup_llvm_fn, [])
 
 def gen_tests(g):
   test_identifiers_and_llvm_fns = {}
 
   for t in g.tests:
-    test_identifier = f'test.`{t.desc}`'
+    test_identifier = f"test.`{t.desc}`"
     
     if test_identifier in test_identifiers_and_llvm_fns:
       error('dupplicate test', t.pos)
@@ -2391,9 +2500,12 @@ def gen_tests(g):
     test_identifiers_and_llvm_fns[test_identifier] = (t, llvm_fn)
   
   llvm_main = gen_llvm_main(None, g)
-  llvm_builder = ll.IRBuilder(llvm_main.append_basic_block('entry'))
+  llvm_allocas = ll.IRBuilder(llvm_main.append_basic_block('allocas'))
+  first_entry = llvm_builder = ll.IRBuilder(llvm_main.append_basic_block('entry'))
   llvm_puts = g.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
   llvm_cstring = ll.PointerType(ll.IntType(8))
+
+  emit_setup_trace(llvm_builder)
 
   for test_id, (test_node, llvm_fn_test) in test_identifiers_and_llvm_fns.items():
     failurebr = ll.IRBuilder(llvm_main.append_basic_block('failure_branch'))
@@ -2403,7 +2515,8 @@ def gen_tests(g):
     failure_message = f'[X] failed test at {repr_pos(test_node.pos, use_path=True)}: {test_node.desc}'
 
     # running the test
-    llvm_test_result = llvm_builder.call(llvm_fn_test, [])
+    trail_info = f'  running test {test_node.desc} at {repr_pos(test_node.pos, use_path=True)}'
+    llvm_test_result = g.llvm_call(llvm_builder, llvm_fn_test, [], (llvm_allocas, trail_info))
     # checking if the test passed
     llvm_cmp = llvm_builder.icmp_signed('!=', llvm_test_result, ll.Constant(ll.IntType(32), 0))
     llvm_builder.cbranch(llvm_cmp, failurebr.block, successebr.block)
@@ -2421,6 +2534,7 @@ def gen_tests(g):
     # keep running remaining tests
     llvm_builder = newbr
   
+  llvm_allocas.branch(first_entry.block)
   llvm_builder.ret(ll.Constant(ll.IntType(32), 0))
 
 def gen(g):
@@ -2430,4 +2544,4 @@ def gen(g):
   main_proto, _, _ = g.gen_nongeneric_fn(main)
   check_main_proto(main_proto, main.node.pos)
 
-  gen_llvm_main(g.fn_evaluated[id(main)][1], g)
+  gen_llvm_main(g.fn_evaluated[id(main)][1], g, main.node.pos)
