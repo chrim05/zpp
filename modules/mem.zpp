@@ -53,14 +53,16 @@ fn dynallocator_create_seq(|T| self: *mut Allocator, len: u64) -> *mut T:
   offset_len: u64 = type_size!(|T|) * len
 
   -- checking if the new allocation could cause the allocator to overflow
-  allocator_ensure_has_space_for(self, offset_len)
+  dynallocator_ensure_has_enough_space_for(self, offset_len)
 
   return allocator_create_seq(|T| self, len)
 
 -- when the allocator has no enough space to allocate other 'offset' bytes
 -- the internal allocation is resized
-fn allocator_ensure_has_enough_space(self: *mut Allocator, offset: u64) -> void:
-  if self->cap >= self->len + target_len:
+fn dynallocator_ensure_has_enough_space_for(self: *mut Allocator, offset: u64) -> void:
+  target_len: u64 = self->len + offset
+
+  if self->cap >= target_len:
     return
 
   allocator_resize(self, target_len * 2)

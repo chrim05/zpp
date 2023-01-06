@@ -261,10 +261,19 @@ class RealType:
     return self.kind == 'struct_rt'
   
   def calculate_size(self):
-    if self.is_int():
+    if self.is_numeric():
       return self.bits // 8
 
     match self.kind:
+      case 'ptr_rt':
+        return 8 # todo: return the size of the target arch
+      
+      case 'struct_rt':
+        return max(map(lambda k: self.fields[k].calculate_size(), self.fields)) * len(self.fields)
+      
+      case 'static_array_rt':
+        return self.type.calculate_size() * self.length
+
       case _:
         raise NotImplementedError()
   

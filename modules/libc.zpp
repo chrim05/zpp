@@ -62,11 +62,11 @@ fn ftell(file_stream: CFile) -> i64:
   return internal_call!(|CFile, i64| 'ftell', file_stream)
 
 -- wraps for 'fopen' modes
-OpenModeRead: *u8 = 'r'
-OpenModeWrite: *u8 = 'w'
-OpenModeAppend: *u8 = 'a'
-OpenModeReadWrite: *u8 = 'w+'
-OpenModeReadAppend: *u8 = 'a+'
+OpenModeRead: *u8 = cstr!('r')
+OpenModeWrite: *u8 = cstr!('w')
+OpenModeAppend: *u8 = cstr!('a')
+OpenModeReadWrite: *u8 = cstr!('w+')
+OpenModeReadAppend: *u8 = cstr!('a+')
 
 -- mode: it can be 'r', 'w', 'a', 'w+', 'a+'
 -- return file stream to that file, null if not found

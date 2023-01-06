@@ -19,7 +19,7 @@ fn cstr_len(cstr: *u8) -> u64:
     return 0
 
   len: u64 = 0
-  for .., cstr[len] != '\0', len += 1:
+  for .., cstr[len] != `\0`, len += 1:
     pass
   
   return len

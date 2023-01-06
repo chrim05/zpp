@@ -406,7 +406,9 @@ class Generator:
     check_sym_is_local_or_global_var(id_tok, sym)
 
     if sym.kind == 'global_var_sym':
+      sym.generator.push_builder(self.cur_builder)
       sym.generator.evaluate_global_sym(sym)
+      sym.generator.pop_builder()
 
     if sym.is_comptime:
       return sym.realdata
@@ -1222,7 +1224,6 @@ class Generator:
       llvm_data=llvm_data
     )
   
-  '''
   def evaluate_internal_call_to_cstr(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 1)
@@ -1232,10 +1233,32 @@ class Generator:
 
     return RealData(
       CSTRING_REALTYPE,
-      value=value,
+      realtype_is_coerced=None,
+      value=call_node.args[0].value,
       llvm_data=llvm_data
     )
-  '''
+  
+  def evaluate_internal_call_to_carr_mut(self, call_node):
+    return self.evaluate_internal_call_to_carr(call_node, construct_as_mut=True)
+
+  def evaluate_internal_call_to_carr(self, call_node, construct_as_mut=False):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 1)
+
+    arg = call_node.args[0]
+
+    if arg.kind != 'array_init_node':
+      error('expected static array initializer', arg.pos)
+    
+    realdata = self.evaluate_node(
+      Node('unary_node', is_mut=False, op=Node('&', value='&', pos=call_node.pos), expr=arg, pos=call_node.pos),
+      self.ctx
+    )
+
+    realdata.llvm_data = self.cur_builder.bitcast(realdata.llvm_data, self.convert_realtype_to_llvmtype(self.ctx))
+    realdata.realtype = RealType('ptr_rt', is_mut=construct_as_mut, type=realdata.realtype.type.type)
+
+    return realdata
 
   def evaluate_internal_call_to_internal_var(self, call_node):
     return self.evaluate_lib_var(call_node, True)
@@ -1374,6 +1397,38 @@ class Generator:
     self.cur_builder = ll.IRBuilder(llvm_truebr)
 
     return create_result()
+
+  def evaluate_internal_call_to_expect(self, call_node):
+    if is_release_build():
+      return RealData(
+        RealType('i32', aka='Error'),
+        llvm_data=ll.Constant(ll.IntType(32), 0)
+      )
+    
+    self.expect_args_count(call_node, lambda count: count == 1)
+    self.expect_generics_count(call_node, lambda count: count == 0)
+
+    arg = call_node.args[0]
+
+    return self.evaluate_inline_if_node(
+      Node(
+        'inline_if_node',
+        pos=call_node.pos,
+        if_cond=arg,
+        if_expr=Node(
+          'as_node',
+          expr=Node('num', value='0', pos=call_node.pos),
+          type=Node('id', value='i32', pos=call_node.pos),
+          pos=call_node.pos
+        ),
+        else_expr=Node(
+          'as_node',
+          expr=Node('num', value='1', pos=call_node.pos),
+          type=Node('id', value='i32', pos=call_node.pos),
+          pos=call_node.pos
+        )
+      )
+    )
   
   def evaluate_internal_call_to_type_size(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 0)
@@ -1597,10 +1652,7 @@ class Generator:
 
       realdata_expr.llvm_data = self.create_tmp_alloca_for_expraddr(realdata_expr)
     
-    if self.ctx.is_ptr() and realdata_expr.realtype.is_static_array():
-      realdata_expr.llvm_data = self.cur_builder.bitcast(realdata_expr.llvm_data, self.convert_realtype_to_llvmtype(self.ctx))
-      realdata_expr.realtype = self.ctx
-    elif self.ctx.could_be_fat_pointer() and realdata_expr.realtype.is_static_array():
+    if self.ctx.could_be_fat_pointer() and realdata_expr.realtype.is_static_array():
       llvm_type = self.convert_realtype_to_llvmtype(self.ctx)
       ptr = self.cur_builder.bitcast(realdata_expr.llvm_data, llvm_type.elements[0])
 
@@ -1740,14 +1792,6 @@ class Generator:
 
   def evaluate_str(self, tok):
     llvm_data = self.cache_string(tok.value, use_bitcast=self.ctx != CSTRING_REALTYPE)
-
-    if self.ctx == CSTRING_REALTYPE:
-      return RealData(
-        CSTRING_REALTYPE,
-        realtype_is_coerced=None,
-        value=tok.value,
-        llvm_data=llvm_data
-      )
     
     agg = ll.Constant(self.convert_realtype_to_llvmtype(STRING_REALTYPE), ll.Undefined)
     llvm_data = self.llvm_insert_value(self.cur_builder, agg, llvm_data, 0, self.convert_realtype_to_llvmtype(CSTRING_REALTYPE))
@@ -2190,7 +2234,7 @@ def gen_llvm_main(llvm_internal_main, g):
   if llvm_internal_main is None:
     return ll.Function(
       g.output,
-      ll.FunctionType(ll.VoidType(), []),
+      ll.FunctionType(ll.IntType(32), []),
       'main'
     )
 
@@ -2264,7 +2308,7 @@ def gen_tests(g):
     # keep running remaining tests
     llvm_builder = newbr
   
-  llvm_builder.ret_void()
+  llvm_builder.ret(ll.Constant(ll.IntType(32), 0))
 
 def gen(g):
   main = get_main(g)

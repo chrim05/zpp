@@ -5,20 +5,14 @@ test 'and':
   b: u8 = true
   c: u8 = false
 
-  if a and b and c:
-    return Err
-  
-  if a and c:
-    return Err
-  
-  if b and c:
-    return Err
+  try not expect!(a and b and c)
+  try not expect!(a and c)
+  try not expect!(b and c)
 
 test 'and2':
   n: u8 = true
 
-  if false and n:
-    return Err
+  try not expect!(false and n)
 
 test 'array':
   a: [3 x i32] = [1, 2, 3]
@@ -29,8 +23,7 @@ test 'array':
   (*b)[1] = 3
   c[2] = 4
 
-  if a[0] + a[1] + a[2] != 9:
-    return Err
+  try expect!(a[0] + a[1] + a[2] == 9)
 
 test 'bool':
   x: u8 = true
@@ -48,18 +41,14 @@ test 'bool2':
   x: u8 = false
   y: u8 = false
 
-  if x or y:
-    return Err
-  
-  if y or x:
-    return Err
+  try not expect!(x or y)
+  try not expect!(y or x)
 
 test 'chr':
   x: u8 = `a`
   y: i32 = `b`
 
-  if y - x as i32 != 1:
-    return Err
+  try expect!(y - x as i32 == 1)
 
 from '../modules/libc.zpp' import [ malloc, free ]
 
@@ -72,7 +61,7 @@ test 'defer':
   -- in return expression is still available
   -- it means the free is called just before
   -- the terminator (return instruction)
-  return Ok if *(x as *i32) == 2 else Err
+  return expect!(*(x as *i32) == 2)
 
 -- iterative fibonacci
 fn ifib(n: u16) -> u64:
@@ -92,16 +81,16 @@ fn rfib(n: u16) -> u64:
   return n as u64 if n <= 1 else rfib(n - 1) + rfib(n - 2)
 
 test 'iterative fib + recursive fib':
-  return Ok if ifib(20) + rfib(15) == 7375 else Err
+  return expect!(ifib(20) + rfib(15) == 7375)
 
 test 'forloop':
   i: u32 = 0
   for .., i < 10, i += 1:
     pass
   
-  return Ok if i == 10 else Err
+  return expect!(i == 10)
 
-test 'floating points':
+test 'floating points + nested if':
   x: f32 = 1.2
   y: i32 = (x + 0.8) as i32
   z: f64 = y as f64 + 0.1
@@ -123,7 +112,7 @@ test 'generic function':
   a: u8 = add(|u8| 1, 2)
   b: i32 = add(|i32| 3, 4)
 
-  return Ok if a as i32 + b + 1 == 11 else Err
+  return expect!(a as i32 + b + 1 == 11)
 
 type Node[T] = (data: T, next: *Node[T])
 
@@ -131,7 +120,7 @@ test 'generic type':
   b: Node[i32] = (data: 2, next: null)
   a: Node[i32] = (data: 1, next: &b)
   
-  return Ok if a.data + a.next->data == 3 else Err
+  return expect!(a.data + a.next->data == 3)
 
 from 'libs/module_to_import2.zpp' import [ stdout, stderr, do_something_with_fd ]
 
@@ -139,7 +128,7 @@ test 'global variables':
   do_something_with_fd(stdout)
   do_something_with_fd(stderr)
 
-  return Ok if stdout + stderr == 3 else Err
+  return expect!(stdout + stderr == 3)
 
 test 'elif statement':
   argc: u32 = 2
@@ -165,17 +154,17 @@ test 'nested if statement':
 test 'inline if':
   a: u8 = true or false
 
-  return Ok if a else Err
+  return expect!(a)
 
 from '../modules/seq.zpp' import [ String, Array ]
 
 type Vec3 = (x: u64, y: u64, z: u64)
 
 test 'literals of any type':
-  ThisIsConst: *u8 = 'this must be a comptime value'
+  ThisIsConst: *u8 = cstr!('this must be a comptime value')
   Size: u64 = 2
 
-  s: *u8 = 'hello world' -- this points to the data segment
+  s: *u8 = cstr!('hello world') -- this points to the data segment
   y: String = 'sized literal string' -- this also points to it
   c: u8 = `c`
   i: i32 = -1
@@ -188,7 +177,7 @@ test 'literals of any type':
   b: Array[i32] = (ptr: &a as *i32, len: 2) -- sized array
   o: Array[i64] = &[1, 2, 3]
   
-  s = 'goodbye'
+  s = cstr!('goodbye')
   i = true
   u = `i`
   c = null
@@ -207,13 +196,14 @@ test 'literals of any type':
   -- we can discard non-void values
   .. = 1
 
-  return Ok if y.len + u == 125 else Err
+  return expect!(y.len + u == 125)
 
-test 'num literals':
+test 'num and fnum literals':
   x: i32 = 1'000'000
   y: f32 = 1'000'000.2
   
-  return Ok if x + y as i32 == 2'000'000 else Err
+  try expect!(x + y as i32 == 2'000'000)
+  try expect!(x as f32 + y == 2'000'000.2)
 
 fn foo(x: i64) -> u8:
   return 12
@@ -224,24 +214,21 @@ fn bar() -> Error:
 test 'fn ptr':
   x: *fn(i64) -> u8 = fn2ptr!(foo)
 
-  if invoke!(x, 10) != 12:
-    return Err
+  try expect!(invoke!(x, 10) == 12)
 
 test 'fn ptr2':
   y: *fn() -> Error = fn2ptr!(bar)
   try invoke!(y)
 
 test 'not':
-  a: u8 = true
+  a: u8 = false
   
-  if not a:
-    return Err
+  try expect!(not a)
 
 test 'not2':
   a: u8 = false
 
-  if a:
-    return Err
+  try not expect!(a)
   
   if not a:
     return Ok
@@ -253,13 +240,8 @@ test 'or':
   b: u8 = true
   c: u8 = false
 
-  if a or c:
-    return Err
-
-  if a or b or c:
-    return Ok
-
-  return Err
+  try not expect!(a or c)
+  try expect!(a or b or c)
 
 test 'pointers':
   x: u8 = 0
@@ -273,11 +255,8 @@ test 'pointers':
   *y = *z
   -- *z = 1 -- unable to write to unmutable pointer
   
-  if x != 3:
-    return Err
-  
-  if *y != *z:
-    return Err
+  try expect!(x == 3)
+  try expect!(*y == *z)
 
 -- iterative pow
 fn ipow(base: u64, exp: u16) -> u64:
@@ -293,16 +272,13 @@ fn rpow(base: u64, exp: u16) -> u64:
   return 1 if exp == 0 else base * rpow(base, exp - 1)
 
 test 'iterative pow + recursive pow':
-  return Ok if ipow(10, 2) + rpow(10, 3) == 1100 else Err
+  return expect!(ipow(10, 2) + rpow(10, 3) == 1100)
 
 test 'ptr array access':
-  argv: **u8 = &['hello', 'world']
+  argv: **u8 = carr!([cstr!('hello'), cstr!('world')])
 
-  if argv[0][0] != `h`:
-    return Err
-  
-  if argv[1][0] != `w`:
-    return Err
+  try expect!(argv[0][0] == `h`)
+  try expect!(argv[1][0] == `w`)
 
 type Couple = (a: u8, b: u8)
 
@@ -310,25 +286,28 @@ test 'ptr array access2':
   a: Couple = (a: 1, b: 2)
   b: Couple = (a: 3, b: 4)
 
-  ab: **Couple = &[&a, &b]
+  ab: **Couple = carr!([&a, &b])
   
-  if (ab[0]->a + ab[0]->b) * (ab[1]->a + ab[1]->b) != 21:
-    return Err
+  try expect!((ab[0]->a + ab[0]->b) * (ab[1]->a + ab[1]->b) == 21)
 
 test 'static array':
   a: [3 x i32] = [1, 2, 3]
   b: *[3 x i32] = &a
   c: *i32 = b as *i32
   
-  if a[0] + (*b)[1] + c[2] != 6:
-    return Err
+  try expect!(a[0] + (*b)[1] + c[2] == 6)
+
+test 'carray':
+  x: *mut u16 = carr_mut!([1, 2, 3])
+  x[0] = 2
+
+  try expect!(x[0] + x[1] + x[2] == 7)
 
 test 'str from array of chars':
-  x: *u16 = &[`a`, `b`, `c`]
+  x: *u16 = carr!([`a`, `b`, `c`])
   -- using `u16` instead of `u8` to avoid overflow when adding together the chars
 
-  if x[0] + x[1] + x[2] != `a` + `b` + `c`:
-    return Err
+  try expect!(x[0] + x[1] + x[2] == `a` + `b` + `c`)
 
 fn hash_string(s: *String) -> u64:
   result: u64 = 0
@@ -339,16 +318,14 @@ fn hash_string(s: *String) -> u64:
   return result
 
 test 'hashing String manually (iterating over String)':
-  if hash_string(&'hello world') != 1116:
-    return Err
+  try expect!(hash_string(&'hello world') == 1116)
 
 test 'cstring indexing':
-  x: *u8 = 'abc'
+  x: *u8 = cstr!('abc')
 
   -- casting each term to avoid overflow
   -- if we do `(x[0] + x[1] + ..) as i32` we have UB
-  if x[0] as i32 + x[1] as i32 + x[2] as i32 != 294:
-    return Err
+  try expect!(x[0] as i32 + x[1] as i32 + x[2] as i32 == 294)
 
 type Person = (name: *u8, age: u8)
 
@@ -356,8 +333,7 @@ test 'struct constructions and field access':
   person: Person = (name: null, age: 2)
   person2: Person = (name: null, age: 1) -- inferred
   
-  if person.age + person2.age != 3:
-    return Err
+  try expect!(person.age + person2.age == 3)
 
 test 'struct construction and field access2':
   x: (a: i32, b: (k: i32, w: i32)) = (a: 0, b: (k: 1, w: 2))
@@ -365,8 +341,7 @@ test 'struct construction and field access2':
   x.b.k = 2
   x.b.w *= 3
 
-  if x.b.k + x.b.w != 8:
-    return Err
+  try expect!(x.b.k + x.b.w == 8)
 
 type K = (m: i32, n: i32)
 type R = (a: i32, b: (k: i32, w: *K))
@@ -376,8 +351,7 @@ test 'struct construction and field access3':
   x: R = (a: 0, b: (k: 1, w: &t))
   y: *R = &x
 
-  if y->b.k + (y->b.w->m * y->b.w->n) != 7:
-    return Err
+  try expect!(y->b.k + (y->b.w->m * y->b.w->n) == 7)
 
 SomeError: Error = 1
 
@@ -422,9 +396,7 @@ test 'try add_with_overflow (should overflow)':
 
 test 'try try_with_overflow2 (should not overflow)':
   try add_with_overflow(|i32| 1, 2, out result: i32)
-
-  if result != 3:
-    return Err
+  try expect!(result == 3)
 
 test 'undefined literal':
   x: i32 = undefined
@@ -438,5 +410,26 @@ test 'while loop':
   while i > 0:
     i -= 1
 
-  if i != 0:
-    return Err
+  try expect!(i == 0)
+
+test 'type size':
+  try type_size!(|(a: i32, b: i64)|) != 16
+  try type_size!(|(a: i32, b: i64, c: u8)|) != 8 * 3
+  try type_size!(|[4 x u8]|) != 4
+  try type_size!(|f64|) != 8
+  try type_size!(|*f32|) != 8
+
+type Cat = (name: String, color: (r: u8, g: u8, b: u8))
+type Dog = (name: String, race_name: String)
+
+type AnimalKind = u8
+type Animal = (tag: AnimalKind, data: [cat: Cat, dog: Dog])
+
+AnimalKindCat: AnimalKind = 0
+AnimalKindDog: AnimalKind = 1
+
+test 'union':
+  animal1: Animal = (tag: AnimalKindCat, data.cat: (name: "animal1", color: undefined))
+  animal2: Animal = (tag: AnimalKindDog, data.dog: (name: "animal2", race_name: "huskies"))
+
+  animal1.data.cat.color = (r: 0, g: 0, b: 0)

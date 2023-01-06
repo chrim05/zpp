@@ -32,7 +32,7 @@ fn is_alpha(c: u8) -> u8:
 -- ..you can use process().ptr as cstr)
 --
 -- [NOTE: the function uses 'allocator_create' instead of 'dynallocator_create'
--- ..so please use 'allocator_ensure_has_space_for' before calling
+-- ..so please use 'dynallocator_ensure_has_enough_space_for' before calling
 -- ..otherwise you will get a panic (UB with '--release')]
 --
 -- the used algorithm is generally O(n)

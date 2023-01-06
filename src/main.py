@@ -96,6 +96,10 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   if '--print-llvm-ir' in argv:
     print(llvm_ir)
   
+  if '--llvm-ir' in argv:
+    assert not is_test and not has_to_be_runned
+    return
+  
   if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:
     error(f'clang error, exitcode: {exitcode}', None)
   
@@ -106,7 +110,11 @@ def compile_file(srcpath, is_test, has_to_be_runned):
     except ValueError:
       args = ''
     
-    system(f'{output_filepath} {args}')
+    result = system(f'{output_filepath} {args}')
+    if is_test and (exitcode := result) != 0:
+      error(f'test executable expected to have `exitcode = 0`, got `{exitcode}`', None)
+    
+    return result
 
 def collect_zpp_files_in_dir(path):
   return [f'{path}/{elem}' for elem in listdir(path) if elem.endswith('.zpp')]
@@ -125,7 +133,9 @@ def main():
   files = collect_zpp_files_in_dir(srcpath) if isdir(srcpath) and argv[1] == 'test' else [srcpath]
   
   for file in files:
-    compile_file(file, argv[1] == 'test', True)
+    r = compile_file(file, argv[1] == 'test', True)
+  
+  exit(r)
 
 if __name__ == '__main__':
   main()
