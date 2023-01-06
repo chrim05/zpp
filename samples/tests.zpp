@@ -463,3 +463,24 @@ test 'union2':
   try expect!(x.a == x.c as i64)
 
   try expect!(y.a != y.c as i64)
+
+test 'match':
+  x: i32 = 10
+
+  match x:
+    case 0:
+      pass
+    
+    else:
+      return Ok
+  
+  return Err
+
+test 'match2':
+  x: i32 = 10
+
+  match x:
+    case 10:
+      return Ok
+  
+  return Err

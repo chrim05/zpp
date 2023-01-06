@@ -773,6 +773,44 @@ class Generator:
       field_realtype,
       llvm_data=self.cur_builder.load(ptr_bitcat)
     )
+  
+  def lower_match_case_branch(self, lowered_node_kind, expr_to_match, case_branch):
+    return Node(
+      lowered_node_kind,
+      cond=Node(
+        'bin_node',
+        op=Node('==', value='==', pos=case_branch.pos),
+        left=expr_to_match,
+        right=case_branch.expr,
+        pos=case_branch.pos
+      ),
+      body=case_branch.body,
+      pos=case_branch.pos
+    )
+  
+  def evaluate_match_node_stmt(self, match_node):
+    internal_var_id = self.create_internal_var_name(match_node.expr_to_match.pos)
+    var_decl_node = Node(
+      'var_decl_node',
+      name=internal_var_id,
+      type=None,
+      expr=match_node.expr_to_match,
+      pos=match_node.expr_to_match.pos
+    )
+    
+    if_node = Node(
+      'if_node',
+      if_branch=self.lower_match_case_branch('if_branch_node', internal_var_id, match_node.case_branches[0]),
+      elif_branches=[
+        self.lower_match_case_branch('elif_branch_node', internal_var_id, case)
+          for case in match_node.case_branches[1:]
+      ],
+      else_branch=match_node.else_branch,
+      pos=match_node.pos
+    )
+
+    self.evaluate_var_decl_node_stmt(var_decl_node, type_is_implicit=True)
+    self.evaluate_if_node_stmt(if_node)
 
   def evaluate_dot_node(self, dot_node):
     instance_realdata = self.evaluate_node(dot_node.left_expr, REALTYPE_PLACEHOLDER)
@@ -1044,16 +1082,22 @@ class Generator:
 
         return realdata_expr
 
-  def evaluate_var_decl_node_stmt(self, var_decl_node, type_is_already_evaluated=False):
+  def evaluate_var_decl_node_stmt(self, var_decl_node, type_is_already_evaluated=False, type_is_implicit=False):
     is_comptime = var_is_comptime(var_decl_node.name.value)
 
-    if type_is_already_evaluated:
+    if type_is_implicit:
+      realtype = REALTYPE_PLACEHOLDER
+    elif type_is_already_evaluated:
       realtype = var_decl_node.type
     else:
       realtype = self.evaluate_type(var_decl_node.type)
 
     realdata = self.evaluate_node(var_decl_node.expr, realtype)
-    self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
+
+    if type_is_implicit:
+      realtype = realdata.realtype
+    else:
+      self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
 
     if is_comptime:
       self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)

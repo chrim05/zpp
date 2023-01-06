@@ -593,6 +593,75 @@ class Parser:
       expr=expr,
       pos=pos
     )
+  
+  def parse_case_node(self):
+    if self.match_tok('else', allow_on_new_line=True):
+      pos = self.consume_cur().pos
+      body = self.parse_block()
+
+      return self.make_node(
+        'else_branch_node',
+        body=body,
+        pos=pos
+      )
+
+    pos = self.expect_and_consume('case', allow_on_new_line=True).pos
+    expr = self.parse_expr()
+    body = self.parse_block()
+
+    return self.make_node(
+      'case_branch_node',
+      expr=expr,
+      body=body,
+      pos=pos
+    )
+  
+  def collect_match_block(self):
+    case_branches = []
+    else_branch = None
+    self.expect_and_consume(':')
+
+    if not self.cur.is_on_new_line:
+      error('match cases cannot be inlined', self.cur.pos)
+
+    if self.cur.indent <= self.cur_indent:
+      error('invalid indent', self.cur.pos)
+
+    self.indents.append(self.cur.indent)
+
+    while True:
+      case_node = self.parse_case_node()
+
+      if case_node.kind == 'else_branch_node':
+        else_branch = case_node
+        break
+
+      case_branches.append(case_node)
+
+      if not self.has_tok or self.cur.indent < self.cur_indent:
+        break
+
+      if self.cur.indent > self.cur_indent:
+        error('invalid indent', self.cur.pos)
+    
+    self.indents.pop()
+    return case_branches, else_branch
+
+  def parse_match_node(self):
+    pos = self.consume_cur().pos
+    expr_to_match = self.parse_expr()
+    case_branches, else_branch = self.collect_match_block()
+
+    if len(case_branches) == 0:
+      error('match must have at least one case branch', pos)
+
+    return self.make_node(
+      'match_node',
+      expr_to_match=expr_to_match,
+      case_branches=case_branches,
+      else_branch=else_branch,
+      pos=pos
+    )
 
   def parse_defer_node(self):
     pos = self.consume_cur().pos
@@ -718,6 +787,9 @@ class Parser:
       
       case 'defer':
         return self.parse_defer_node()
+      
+      case 'match':
+        return self.parse_match_node()
 
       case _:
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
