@@ -59,23 +59,33 @@ class Parser:
     
     return self.consume_cur()
 
-  def parse_struct_fields(self):
+  def parse_struct_fields(self, is_union_node=False):
     fields = []
+    field_nodekind = 'struct_field_node' if not is_union_node else 'union_field_node'
 
     while True:
       name = self.expect_and_consume('id', allow_on_new_line=True)
       self.expect_and_consume(':')
       type = self.parse_type()
 
-      fields.append(self.make_node('struct_field_node', name=name, type=type, pos=name.pos))
+      fields.append(self.make_node(field_nodekind, name=name, type=type, pos=name.pos))
 
       if not self.match_tok(','):
         break
       
       self.advance()
 
-    self.expect_and_consume(')', allow_on_new_line=True)
+    self.expect_and_consume(')' if not is_union_node else ']', allow_on_new_line=True)
     return fields
+  
+  def parse_union_type(self, pos):
+    fields = self.parse_struct_fields(is_union_node=True)
+
+    return self.make_node(
+      'union_type_node',
+      fields=fields,
+      pos=pos
+    )
 
   def parse_type(self):
     if self.match_tok('fn'):
@@ -97,6 +107,10 @@ class Parser:
     
     if self.match_tok('['):
       pos = self.consume_cur().pos
+
+      if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
+        return self.parse_union_type(pos)
+
       length = self.parse_expr()
       i = self.expect_and_consume('id')
 
@@ -310,7 +324,7 @@ class Parser:
     nodes = []
 
     while True:
-      nodes.append(self.parse_expr())
+      nodes.append(self.parse_expr(allow_left_on_new_line=True))
 
       if not self.match_tok(','):
         break
@@ -333,7 +347,10 @@ class Parser:
         pass
     
       case '[':
-        term = self.parses_array_init_node(term.pos)
+        if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
+          term = self.parse_struct_init_node(term.pos, is_union_node=True)
+        else:
+          term = self.parses_array_init_node(term.pos)
     
       case '+' | '-' | '&' | '*' | 'not':
         op = term
@@ -393,25 +410,29 @@ class Parser:
     
     return term
   
-  def parse_struct_init_node(self, pos):
+  def parse_struct_init_node(self, pos, is_union_node=False):
     fields = []
+    field_nodekind = 'struct_field_init_node' if not is_union_node else 'union_field_init_node'
 
     while True:
       name = self.expect_and_consume('id', allow_on_new_line=True)
       self.expect_and_consume(':')
       expr = self.parse_expr()
 
-      fields.append(self.make_node('struct_field_init_node', name=name, expr=expr, pos=name.pos))
+      fields.append(self.make_node(field_nodekind, name=name, expr=expr, pos=name.pos))
 
       if not self.match_tok(','):
         break
       
       self.advance()
 
-    self.expect_and_consume(')', allow_on_new_line=True)
+    self.expect_and_consume(')' if not is_union_node else ']', allow_on_new_line=True)
+
+    if is_union_node and len(fields) > 1:
+      error('union initializer can only contain one field assignment', pos)
 
     return self.make_node(
-      'struct_init_node',
+      'struct_init_node' if not is_union_node else 'union_init_node',
       fields=fields,
       pos=pos
     )

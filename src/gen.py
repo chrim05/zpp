@@ -271,6 +271,14 @@ class Generator:
           arg_types=[self.evaluate_type(arg_type) for arg_type in type_node.arg_types],
           ret_type=self.evaluate_type(type_node.ret_type, allow_void_type=True)
         )
+      
+      case 'union_type_node':
+        return RealType(
+          'union_rt',
+          fields={
+            field.name.value: self.evaluate_type(field.type, is_top_call=False) for field in type_node.fields
+          }
+        )
 
       case _:
         raise NotImplementedError()
@@ -496,11 +504,11 @@ class Generator:
     
     error(f'types `{rt1}` and `{rt2}` are not compatible', pos)
 
-  def expect_realdata_is_struct(self, realdata, pos):
-    if realdata.realtype.is_struct():
+  def expect_realdata_is_struct_or_union(self, realdata, pos):
+    if realdata.realtype.is_struct() or realdata.realtype.is_union():
       return
     
-    error(f'expected struct expression, got `{realdata.realtype}`', pos)
+    error(f'expected struct or union expression, got `{realdata.realtype}`', pos)
 
   def expect_realdata_has_numeric_value(self, realdata, pos):
     if realdata.has_numeric_value():
@@ -749,14 +757,34 @@ class Generator:
       self.convert_realtype_to_llvmtype(target_rt)
     )
   
+  def evaluate_dot_node_for_union(self, dot_node, instance_realdata, field_name):
+    field_realtype = instance_realdata.realtype.fields[field_name]
+    llvm_type = self.convert_realtype_to_llvmtype(field_realtype)
+
+    if isinstance(instance_realdata.llvm_data, ll.LoadInstr):
+      self.cur_builder.remove(instance_realdata.llvm_data)
+      ptr = instance_realdata.llvm_data.operands[0]
+    else:
+      ptr = self.allocas_builder.alloca('union.tmp')
+
+    ptr_bitcat = self.cur_builder.bitcast(ptr, ll.PointerType(llvm_type))
+
+    return RealData(
+      field_realtype,
+      llvm_data=self.cur_builder.load(ptr_bitcat)
+    )
+
   def evaluate_dot_node(self, dot_node):
     instance_realdata = self.evaluate_node(dot_node.left_expr, REALTYPE_PLACEHOLDER)
     field_name = dot_node.right_expr.value
 
-    self.expect_realdata_is_struct(instance_realdata, dot_node.pos)
+    self.expect_realdata_is_struct_or_union(instance_realdata, dot_node.pos)
 
     if field_name not in instance_realdata.realtype.fields:
-      error(f'struct `{instance_realdata.realtype}` has no field `{field_name}`', dot_node.pos)
+      error(f'{instance_realdata.realtype.kind.replace("_rt", "")} `{instance_realdata.realtype}` has no field `{field_name}`', dot_node.pos)
+
+    if instance_realdata.realtype.is_union():
+      return self.evaluate_dot_node_for_union(dot_node, instance_realdata, field_name)
 
     field_index = list(instance_realdata.realtype.fields.keys()).index(field_name)
     realtype = instance_realdata.realtype.fields[field_name]
@@ -1869,6 +1897,29 @@ class Generator:
         self.convert_realtype_to_llvmtype(realtype)
       )
     )
+  
+  def evaluate_union_init_node(self, init_node):
+    field_node = init_node.fields[0]
+    
+    if not self.ctx.is_union():
+      error('union constructor has an unclear type here', init_node.pos)
+    
+    if field_node.name.value not in self.ctx.fields:
+      error(f'this union field is not present in the contect union type `{self.ctx}`', field_node.pos)
+    
+    ctx_type = self.ctx.fields[field_node.name.value]
+    llvm_type = self.convert_realtype_to_llvmtype(ctx_type)
+    realdata = self.evaluate_node(field_node.expr, ctx_type)
+    self.expect_realtype(ctx_type, realdata.realtype, field_node.expr.pos)
+
+    alloca = self.allocas_builder.alloca(self.convert_realtype_to_llvmtype(self.ctx), name='union.tmp')
+    alloca_bitcast = self.cur_builder.bitcast(alloca, ll.PointerType(llvm_type))
+    self.cur_builder.store(realdata.llvm_data, alloca_bitcast)
+
+    return RealData(
+      self.ctx,
+      llvm_data=self.cur_builder.load(alloca)
+    )
 
   def convert_realtype_to_llvmtype(self, realtype, in_progress_struct_rd_ids=[]):
     if realtype.is_int():
@@ -1876,7 +1927,6 @@ class Generator:
     
     if realtype.is_float():
       return {
-        16: ll.HalfType(),
         32: ll.FloatType(),
         64: ll.DoubleType(),
       }[realtype.bits]
@@ -1887,6 +1937,9 @@ class Generator:
       
       case 'void_rt':
         return ll.VoidType()
+      
+      case 'union_rt':
+        return ll.IntType(realtype.calculate_size() * 8)
       
       case 'static_array_rt':
         return ll.ArrayType(self.convert_realtype_to_llvmtype(realtype.type, in_progress_struct_rd_ids), realtype.length)

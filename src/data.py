@@ -134,6 +134,15 @@ class Node:
       case 'array_init_node':
         return f'{self.nodes}'
       
+      case 'union_type_node':
+        return f'{self.fields}'
+
+      case 'union_field_init_node':
+        return f'{self.name}: {self.expr}'
+
+      case 'union_field_node':
+        return f'{self.name}: {self.type}'
+      
       case 'test_node':
         return f'test {self.desc}{repr_block(self.body)}'
 
@@ -254,6 +263,9 @@ class RealType:
   def is_numeric(self):
     return self.is_int() or self.is_float()
 
+  def is_union(self):
+    return self.kind == 'union_rt'
+
   def is_ptr(self):
     return self.kind == 'ptr_rt'
   
@@ -270,6 +282,9 @@ class RealType:
       
       case 'struct_rt':
         return max(map(lambda k: self.fields[k].calculate_size(), self.fields)) * len(self.fields)
+
+      case 'union_rt':
+        return max(map(lambda k: self.fields[k].calculate_size(), self.fields))
       
       case 'static_array_rt':
         return self.type.calculate_size() * self.length
@@ -282,8 +297,9 @@ class RealType:
       return False
     
     key = (id(self), id(obj))
+    specials = ['struct_rt', 'union_rt']
     
-    if self.is_struct() and obj.is_struct():
+    if self.kind in specials or obj.kind in specials:
       if key in in_progress_struct_rt_ids:
         return True
     else:
@@ -299,7 +315,10 @@ class RealType:
 
         case _:
           return equal_dicts(self.__dict__, obj.__dict__, ['aka'])
-      
+    
+    if self.kind != obj.kind:
+      return False
+
     for (name1, rt1), (name2, rt2) in zip(self.fields.items(), obj.fields.items()):
       if name1 != name2 or not rt1.internal_eq(rt2, in_progress_struct_rt_ids + [key]):
         return False
@@ -341,6 +360,13 @@ class RealType:
       
       case 'fn_rt':
         return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
+      
+      case 'union_rt':
+        fields = ", ".join(
+          map(lambda field: f"{field[0]}: {field[1].internal_repr(in_progress_struct_rt_ids)}", self.fields.items())
+        )
+
+        return f'[{fields}]'
 
       case _:
         raise NotImplementedError()

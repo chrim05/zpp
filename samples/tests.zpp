@@ -156,7 +156,11 @@ test 'inline if':
 
   return expect!(a)
 
-from '../modules/seq.zpp' import [ String, Array ]
+from '../modules/seq.zpp' import [
+  String,
+  Array,
+  string_eq
+]
 
 type Vec3 = (x: u64, y: u64, z: u64)
 
@@ -413,13 +417,14 @@ test 'while loop':
   try expect!(i == 0)
 
 test 'type size':
-  try type_size!(|(a: i32, b: i64)|) != 16
-  try type_size!(|(a: i32, b: i64, c: u8)|) != 8 * 3
-  try type_size!(|[4 x u8]|) != 4
-  try type_size!(|f64|) != 8
-  try type_size!(|*f32|) != 8
+  try expect!(type_size!(|(a: i32, b: i64)|) == 16)
+  try expect!(type_size!(|(a: i32, b: i64, c: u8)|) == 8 * 3)
+  try expect!(type_size!(|[4 x u8]|) == 4)
+  try expect!(type_size!(|f64|) == 8)
+  try expect!(type_size!(|*f32|) == 8)
 
-type Cat = (name: String, color: (r: u8, g: u8, b: u8))
+type Rgb = (r: u8, g: u8, b: u8)
+type Cat = (name: String, color: Rgb)
 type Dog = (name: String, race_name: String)
 
 type AnimalKind = u8
@@ -428,8 +433,33 @@ type Animal = (tag: AnimalKind, data: [cat: Cat, dog: Dog])
 AnimalKindCat: AnimalKind = 0
 AnimalKindDog: AnimalKind = 1
 
-test 'union':
-  animal1: Animal = (tag: AnimalKindCat, data.cat: (name: "animal1", color: undefined))
-  animal2: Animal = (tag: AnimalKindDog, data.dog: (name: "animal2", race_name: "huskies"))
+fn rgb_eq(left: Rgb, right: Rgb) -> u8:
+  return \
+    left.r == right.r and \
+    left.g == right.g and \
+    left.b == right.b
 
-  animal1.data.cat.color = (r: 0, g: 0, b: 0)
+test 'union':
+  animal1: Animal = (tag: AnimalKindCat, data: [cat: (name: 'animal1', color: undefined)])
+  animal2: Animal = (tag: AnimalKindDog, data: [dog: (name: 'animal2', race_name: 'huskies')])
+  animals: Array[*Animal] = &[&animal1, &animal2]
+
+  animal1.data.cat.color = (r: 0, g: 1, b: 0)
+
+  try expect!(animals.ptr[0]->tag == AnimalKindCat)
+  try expect!(animals.ptr[1]->tag == AnimalKindDog)
+
+  try expect!(string_eq(animals.ptr[0]->data.cat.name, 'animal1'))
+  try expect!(string_eq(animals.ptr[1]->data.dog.name, 'animal2'))
+
+  try expect!(rgb_eq(animals.ptr[0]->data.cat.color, (r: 0, g: 1, b: 0)))
+  try expect!(string_eq(animals.ptr[1]->data.dog.race_name, 'huskies'))
+
+test 'union2':
+  x: [a: i64, b: i64, c: u8] = [a: 100]
+  y: [a: i64, b: i64, c: u8] = [a: 300]
+
+  try expect!(x.a == x.b as i64)
+  try expect!(x.a == x.c as i64)
+  
+  try expect!(y.a != y.c as i64)
