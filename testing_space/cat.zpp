@@ -1,18 +1,13 @@
-from '../modules/io.zpp' import [
-  get_file_stream_size, print, printf
-]
-
-from '../modules/libc.zpp' import [
-  OpenModeRead, CFile, fopen, fread, fclose
-]
+from '../modules/libc.zpp' import [ OpenModeRead, CFile, fopen, fread, fclose ]
+from '../modules/sys.zpp'  import [ Error, Ok ]
+from '../modules/io.zpp'   import [ get_file_stream_size, print, printf ]
+from '../modules/seq.zpp'  import [ create_string ]
 
 from '../modules/mem.zpp' import [
-  Allocator, create_allocator, drop_allocator,
+  Allocator,
+  create_allocator, drop_allocator,
   allocator_create_seq
 ]
-
-from '../modules/seq.zpp' import [ create_string ]
-from '../modules/sys.zpp' import [ Error, Ok ]
 
 BadArguments: Error = 1
 NoSuchFile: Error = 2

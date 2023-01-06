@@ -461,5 +461,5 @@ test 'union2':
 
   try expect!(x.a == x.b as i64)
   try expect!(x.a == x.c as i64)
-  
+
   try expect!(y.a != y.c as i64)
