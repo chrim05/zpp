@@ -1,0 +1,37 @@
+from '../modules/sys.zpp' import [ Error, Ok, Err ]
+from '../modules/seq.zpp' import [ String ]
+from '../modules/mem.zpp' import [
+  Allocator,
+  create_allocator, drop_allocator,
+  create_seq
+]
+
+from '../modules/io.zpp' import [
+  NoSuchFile,
+  get_file_stream_size,
+  read_all_file,
+  print, printf
+]
+
+-- the parsing algorithm does not support any kind
+-- of error recovery
+-- the function return void because parsing errors
+-- are rendered from the parser's internals
+--
+-- filepath: a relative or complete path to the file to parse
+fn parse(filepath: String, output: *mut ZirModule) -> Error:
+  -- ! [IMPORTANT] this allocator is for the source buffer *only*
+  -- if this allocator is also used somewhere else
+  -- with `dyncreate` functions it will reallocate everything
+  -- loosing the validity of all strings linked to this buffer
+  -- (the pointer of those strings won't point to a valid mem region anymore)
+  source_allocator: Allocator = create_allocator(0)
+  defer drop_allocator(&mut source_allocator)
+
+  -- reading all file content into a buffer
+  try read_all_file(&mut source_allocator, filepath, out source: String)
+
+  a: Allocator = create_allocator(0)
+  defer drop_allocator(&mut a)
+
+  return Ok

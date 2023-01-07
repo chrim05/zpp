@@ -1,0 +1,6 @@
+-- this module is responsible for providing
+-- utilities methods for any module
+-- any kind of algorithm which has nothing to do with
+-- compiler stuff is here, an example: path manipulation
+-- and related stuff
+

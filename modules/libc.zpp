@@ -18,7 +18,6 @@ fn puts(buffer: *u8) -> i32:
 -- %errorlevel%, $? -> exit_code
 fn exit(exit_code: i32) -> void:
   internal_call!(|i32, void| 'exit', exit_code)
-  -- todo: implement unreachable!()
 
 -- return the length of a cstr (null terminated buffer)
 fn strlen(cstr: *u8) -> u64:

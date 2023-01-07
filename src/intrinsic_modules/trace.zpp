@@ -30,6 +30,14 @@ fn setup_trace() -> void:
 
 -- prints the call trace
 fn print_trace() -> void:
+  -- when building in release mode
+  -- the compiler won't fill the trace
+  -- with calls informations, anyway
+  -- the below call to puts is ugly
+  -- to see alone, so i prefer avoiding this
+  if is_release_build!():
+    return
+
   .. = internal_call!(|*u8, i32| 'puts', cstr!('Trace (first is the most recent):'))
 
   -- if we want to avoid crash or ub we need to skip the last element

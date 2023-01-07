@@ -1,11 +1,17 @@
 from 'seq.zpp' import [ Array, String ]
 from 'sys.zpp' import [ Error, Ok ]
+from 'mem.zpp' import [
+  Allocator,
+  dyncreate_seq
+]
+
 from 'libc.zpp' import [
   CFile,
   SeekEnd, SeekStart,
-  fwrite,
-  get_stdout,
-  puts,
+  OpenModeRead,
+  fwrite, fread,
+  get_stdout, puts,
+  fopen, fclose,
   fseek, ftell
 ]
 
@@ -40,5 +46,25 @@ fn get_file_stream_size(file_stream: CFile, result_size: *mut u64) -> Error:
   try fseek(file_stream, 0, SeekEnd)
   *result_size = ftell(file_stream) as u64
   try fseek(file_stream, current_position, SeekStart)
+
+  return Ok
+
+NoSuchFile: Error = 2
+
+fn read_all_file(a: *mut Allocator, filepath: String, output: *mut String) -> Error:
+  -- opening the file
+  file_stream: CFile = fopen(filepath.ptr, OpenModeRead)
+  defer try fclose(file_stream)
+  
+  -- checking that the file is correctly opened
+  try expect_or!(file_stream != null, NoSuchFile)
+  -- getting the file size or error
+  try get_file_stream_size(file_stream, out file_size: u64)
+
+  -- allocating memory for the file content
+  buffer: *mut u8 = dyncreate_seq(|u8| a, file_size)
+  len: u64 = fread(buffer, type_size!(|u8|), file_size, file_stream)
+
+  *output = (ptr: buffer as *u8, len: len)
 
   return Ok

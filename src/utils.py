@@ -145,10 +145,10 @@ def get_filename_from_path(path):
   return '.'.join(filename_with_ext.split('.')[:-1])
 
 def is_debug_build():
-  return '--release' not in argv
+  return not is_release_build()
 
 def is_release_build():
-  return not is_debug_build()
+  return '--release' in argv
 
 def equal_dicts(d1, d2, ignore_keys):
   d1_filtered = { k: v for k, v in d1.items() if k not in ignore_keys }

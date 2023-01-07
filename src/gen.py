@@ -1264,7 +1264,7 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
     llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
-    trail_info = f'  invoking function pointer at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    trail_info = f'  invoking function pointer at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
     llvm_call = self.llvm_call(self.cur_builder, fn_realdata.llvm_data, llvm_args, (self.allocas_builder, trail_info))
 
     return RealData(
@@ -1368,13 +1368,13 @@ class Generator:
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
-    return self.evaluate_truefalse(call_node, '0' if is_debug_build() in argv else '1')
+    return self.evaluate_truefalse(call_node, '1' if is_release_build() else '0')
 
   def evaluate_internal_call_to_is_debug_build(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
-    return self.evaluate_truefalse(call_node, '1' if is_debug_build() in argv else '0')
+    return self.evaluate_truefalse(call_node, '1' if is_debug_build() else '0')
   
   def evaluate_internal_call_to_internal_call(self, call_node):
     return self.evaluate_lib_call(call_node, True)
@@ -1409,7 +1409,7 @@ class Generator:
     else:
       trail_info = f'  calling extern `{name_to_call}` from lib `{lib_to_import}` '
     
-    trail_info += f'at {repr_pos(call_node.pos, use_path=True)} in `{self.cur_fn[0].name}`'
+    trail_info += f'at {repr_pos(call_node.pos, use_path=True)} in `{self.get_curfn_name()}`'
 
     return RealData(
       generic_ret_realtype,
@@ -1449,11 +1449,17 @@ class Generator:
     return node.value
   
   def evaluate_internal_call_to_panic(self, call_node):
+    create_result = lambda: RealData(RealType('void_rt'), llvm_data=None)
+
+    if is_release_build():
+      self.cur_builder.unreachable()
+      return create_result()
+
     self.expect_args_count(call_node, lambda count: count in [0, 1])
     self.expect_generics_count(call_node, lambda count: count == 0)
 
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
-    message = f"reached `panic!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`"
+    message = f"reached `panic!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`"
 
     if len(call_node.args) == 1:
       custom_msg = self.expect_node_is_literal_str(call_node.args[0]).replace("'", "\\'")
@@ -1463,7 +1469,11 @@ class Generator:
     self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)], None)
     self.cur_builder.unreachable()
 
-    return RealData(RealType('void_rt'), llvm_data=None)
+    return create_result()
+  
+  def get_curfn_name(self):
+    name = self.cur_fn[0].name
+    return 'test' if name.startswith('test.`') else name
 
   def evaluate_internal_call_to_assert(self, call_node):
     create_result = lambda: RealData(RealType('void_rt'), llvm_data=None)
@@ -1476,7 +1486,7 @@ class Generator:
 
     realdata = self.evaluate_condition_node(call_node.args[0])
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
-    failure_message = f'failed `assert!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    failure_message = f'failed `assert!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
 
     if len(call_node.args) == 2:
       custom_msg = self.expect_node_is_literal_str(call_node.args[1]).replace("'", "\\'")
@@ -1498,22 +1508,25 @@ class Generator:
     return create_result()
 
   def evaluate_internal_call_to_expect(self, call_node):
-    if is_release_build():
-      return RealData(
-        RealType('i32', aka='Error'),
-        llvm_data=ll.Constant(ll.IntType(32), 0)
-      )
-    
     self.expect_args_count(call_node, lambda count: count == 1)
     self.expect_generics_count(call_node, lambda count: count == 0)
+  
+    call_node.args.append(Node('num', value='1', pos=call_node.pos))
 
-    arg = call_node.args[0]
+    return self.evaluate_internal_call_to_expect_or(call_node)
+  
+  def evaluate_internal_call_to_expect_or(self, call_node):
+    self.expect_args_count(call_node, lambda count: count == 2)
+    self.expect_generics_count(call_node, lambda count: count == 0)
+
+    arg1 = call_node.args[0]
+    arg2 = call_node.args[1]
 
     return self.evaluate_inline_if_node(
       Node(
         'inline_if_node',
         pos=call_node.pos,
-        if_cond=arg,
+        if_cond=arg1,
         if_expr=Node(
           'as_node',
           expr=Node('num', value='0', pos=call_node.pos),
@@ -1522,7 +1535,7 @@ class Generator:
         ),
         else_expr=Node(
           'as_node',
-          expr=Node('num', value='1', pos=call_node.pos),
+          expr=arg2,
           type=Node('id', value='i32', pos=call_node.pos),
           pos=call_node.pos
         )
@@ -1546,7 +1559,7 @@ class Generator:
     self.expect_generics_count(call_node, lambda count: count == 0)
 
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
-    message = f'logged `here!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    message = f'logged `here!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
     self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)], None)
 
     return RealData(RealType('void_rt'), llvm_data=None)
@@ -1647,7 +1660,7 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
     llvm_args = list(map(lambda arg: arg.llvm_data, realdata_args))
-    trail_info = f'  calling `{call_node.name.value}` at {repr_pos(call_node.pos, use_path=True)}, in `{self.cur_fn[0].name}`'
+    trail_info = f'  calling `{call_node.name.value}` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
     llvm_call = self.llvm_call(self.cur_builder, llvmfn, llvm_args, (self.allocas_builder, trail_info))
 
     return RealData(

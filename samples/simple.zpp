@@ -1,21 +1,10 @@
 -- todo
 -- + arch!()
--- + bitmask operators bitwise_not/xor/etc..
+-- + operators for ~ | & << >>
 -- + num literals octal/hex/binary notation
 -- + overflow/index_out_of_bounds/etc.. checking in debug builds
 
 from '../modules/sys.zpp' import [ Error, Ok ]
 
-fn add3(a: i32, b: i32) -> i32:
-  panic!('some')
-
-fn add2(a: i32, b: i32) -> i32:
-  return add3(a, b)
-
-fn add(a: i32, b: i32) -> i32:
-  return add2(a, b)
-
 fn main(argc: u32, argv: **u8) -> Error:
-  .. = add(1, 2)
-
   return Ok
