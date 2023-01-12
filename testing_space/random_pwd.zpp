@@ -1,7 +1,7 @@
 from '../modules/mem.zpp' import [
   Allocator,
   create_allocator, drop_allocator,
-  dynallocator_create_seq
+  dyncreate_seq
 ]
 
 from '../modules/seq.zpp' import [ String ]
@@ -28,7 +28,7 @@ fn rand_int(|T| min: T, max: T) -> T:
 -- the used algorithm is generally O(n)
 fn generate_random_pwd(allocator: *mut Allocator, len: u64) -> String:
   -- allocating the output buffer
-  ptr: *mut u8 = dynallocator_create_seq(|u8| allocator, len)
+  ptr: *mut u8 = dyncreate_seq(|u8| allocator, len)
   -- initializing the random generator
   srand(time(null) as u32)
 

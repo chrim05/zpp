@@ -89,3 +89,11 @@ fn time(target: *mut i64) -> i64:
 -- return the stdout buffer
 fn get_stdout() -> *u8:
   return extern_call!(|*u8| 'libs/libchelper.o', 'get_stdout')
+
+-- since it's not allowed to wrap varargs
+-- i use a little trick to call a c function which uses them
+fn printf(|ArgT| fmt: *u8, args: ArgT) -> i32:
+  return internal_call!(|*u8, ArgT, i32| 'printf', fmt, args)
+
+fn sprintf(|ArgT| target: *mut u8, fmt: *u8, args: ArgT) -> i32:
+  return internal_call!(|*mut u8, *u8, ArgT, i32| 'sprintf', target, fmt, args)

@@ -6,7 +6,7 @@ from '../modules/seq.zpp' import [ create_string ]
 from '../modules/mem.zpp' import [
   Allocator,
   create_allocator, drop_allocator,
-  allocator_create_seq
+  create_seq
 ]
 
 BadArguments: Error = 1
@@ -38,7 +38,7 @@ fn main(argc: u32, argv: **u8) -> Error:
   defer drop_allocator(&mut allocator)
 
   -- reading the file content into a buffer of the same size of the file
-  buffer: *mut u8 = allocator_create_seq(|u8| &mut allocator, file_size)
+  buffer: *mut u8 = create_seq(|u8| &mut allocator, file_size)
   -- we use 'len' instead of 'file_size' to construct the string to print
   -- because, for some reason, specific files are correctly printed but
   -- at the same time their 'file_size' and 'len' are different

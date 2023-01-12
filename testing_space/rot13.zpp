@@ -1,6 +1,6 @@
 from '../modules/mem.zpp' import [
   Allocator,
-  allocator_create_seq,
+  create_seq,
   create_allocator, drop_allocator
 ]
 
@@ -31,14 +31,14 @@ fn is_alpha(c: u8) -> u8:
 -- ..the last more byte is due to backward compatibility with cstr,
 -- ..you can use process().ptr as cstr)
 --
--- [NOTE: the function uses 'allocator_create' instead of 'dynallocator_create'
+-- [NOTE: the function uses 'create' instead of 'dyncreate'
 -- ..so please use 'dynallocator_ensure_has_enough_space_for' before calling
 -- ..otherwise you will get a panic (UB with '--release')]
 --
 -- the used algorithm is generally O(n)
 fn process(allocator: *mut Allocator, source: String) -> String:
   -- allocating the output buffer
-  ptr: *mut u8 = allocator_create_seq(|u8| allocator, source.len + 1)
+  ptr: *mut u8 = create_seq(|u8| allocator, source.len + 1)
 
   -- for each char in the source buffer
   for i: u64 = 0, i < source.len, i += 1:

@@ -1,0 +1,1 @@
+type ZirModule = (placeholder: i32)

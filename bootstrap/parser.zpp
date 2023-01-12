@@ -13,15 +13,52 @@ from '../modules/io.zpp' import [
   print, printf
 ]
 
+from 'zir.zpp' import [
+  ZirModule
+]
+
+type Position = (source: *String, filepath: *String, line: u32, col: u16)
+type ParsingError = (msg: String, pos: Position)
+
+type Parser = (
+  filepath: String,
+  source: String,
+  index: u64,
+  output: *mut ZirModule,
+  error: *mut ParsingError
+)
+
+fn init_parser(
+  self: *mut Parser,
+  filepath: String,
+  source: String,
+  output: *mut ZirModule,
+  error: *mut ParsingError
+) -> void:
+  self->filepath = filepath
+  self->source = source
+  self->index = 0
+  self->output = output
+  self->error = error
+
+fn cur(self: *Parser) -> u8:
+  return nth(|u8| self->source, self->index)
+
+fn has_char(self: *Parser) -> u8:
+  return self->index < self->source.len
+
+fn advance(self: *mut Parser) -> void:
+  self->index += 1
+
 -- the parsing algorithm does not support any kind
 -- of error recovery
 -- the function return void because parsing errors
 -- are rendered from the parser's internals
 --
 -- filepath: a relative or complete path to the file to parse
-fn parse(filepath: String, output: *mut ZirModule) -> Error:
+fn parse(filepath: String, output: *mut ZirModule, error: *mut ParsingError) -> Error:
   -- ! [IMPORTANT] this allocator is for the source buffer *only*
-  -- if this allocator is also used somewhere else
+  -- whenever this allocator is used somewhere else
   -- with `dyncreate` functions it will reallocate everything
   -- loosing the validity of all strings linked to this buffer
   -- (the pointer of those strings won't point to a valid mem region anymore)
@@ -31,7 +68,13 @@ fn parse(filepath: String, output: *mut ZirModule) -> Error:
   -- reading all file content into a buffer
   try read_all_file(&mut source_allocator, filepath, out source: String)
 
-  a: Allocator = create_allocator(0)
-  defer drop_allocator(&mut a)
+  p: Parser = undefined
+  init_parser(&mut p, filepath, source, output, error)
 
+  return parse_globals(&mut p)
+
+fn parse_globals(self: *mut Parser) -> Error:
   return Ok
+
+test 'parsing simple file':
+  try parse('bootstrap/samples/simple.zpp', out mod: ZirModule, out err: ParsingError)
