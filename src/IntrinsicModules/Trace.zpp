@@ -20,7 +20,7 @@ type Trace = (last_node: *Trail, len: u16)
 
 MaximumRecursionDepth: u16 = 1'000
 
-trace: Trace = undefined
+trace: Trace = Undefined
 
 -- an implicit call to this function is emitted
 -- by the compiler in the main to make the trace
@@ -35,10 +35,10 @@ fn print_trace() -> void:
   -- with calls informations, anyway
   -- the below call to puts is ugly
   -- to see alone, so i prefer avoiding this
-  if is_release_build!():
+  if IsReleaseBuild!():
     return
 
-  .. = internal_call!(|*u8, i32| 'puts', cstr!('Trace (first is the most recent):'))
+  .. = InternalCall!(|*u8, i32| 'puts', Cstr!('Trace (first is the most recent):'))
 
   -- if we want to avoid crash or ub we need to skip the last element
   -- when the print_trace is due to max recursion (when we have max recursion error
@@ -50,13 +50,13 @@ fn print_trace() -> void:
   -- the last trail (the most recent)
   current_trail: *Trail = trace.last_node
   for i: u16 = skip_one_or_zero, i < trace.len, i += 1:
-    .. = internal_call!(|*u8, i32| 'puts', current_trail->info)
+    .. = InternalCall!(|*u8, i32| 'puts', current_trail.*.info)
     -- moving to the previous trail
     -- (we are iterating backwards)
-    current_trail = current_trail->prev_node
+    current_trail = current_trail.*.prev_node
   
   -- printing visual separator (`puts` also print a `\n`)
-  .. = internal_call!(|*u8, i32| 'puts', cstr!(''))
+  .. = InternalCall!(|*u8, i32| 'puts', Cstr!(''))
 
 fn trace_push(trail: *Trail) -> void:
   -- read below to understand why there are two
@@ -83,7 +83,7 @@ fn trace_push(trail: *Trail) -> void:
     -- greater than (and no longer equal) to `MaximumRecursionDepth`.
     -- the `if` above this in which i am writing takes care of breaking the infinite loop
     -- when `trace.len` is greater than MaximumRecursionDepth
-    panic!('maximum recursion depth exceeded')
+    Panic!('maximum recursion depth exceeded')
   
   -- i replace the last trail of the trace
   -- with a new trail (statically allocated on the stack by the caller)
@@ -97,5 +97,5 @@ fn trace_pop() -> void:
   -- i replace the current last node with
   -- the old one i saved in the `prev_node` field
   -- of the current last node
-  trace.last_node = trace.last_node->prev_node
+  trace.last_node = trace.last_node.*.prev_node
   trace.len -= 1

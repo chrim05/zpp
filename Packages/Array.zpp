@@ -1,0 +1,22 @@
+type Array[T] = (ptr: *T, len: u64)
+
+-- returns the element at index `i` in collection `self`
+fn Nth(|T| self: *Array[T], i: u64) -> T:
+  Assert!(i < self.*.len, 'Index out of bounds')
+
+  return self.*.ptr[i]
+
+-- returns the length of collection `self`
+fn Len(|T| self: *Array[T]) -> u64:
+  return self.*.len
+
+-- todo -> write an optimized version of this
+fn Eq(|T| self: *Array[T], other: *Array[T]) -> u8:
+  if self.*.len != other.*.len:
+    return False
+
+  for i: u64 = 0, i < self.Len(|T|), i += 1:
+    if self.Nth(|T| i) != other.Nth(|T| i):
+      return False
+  
+  return True

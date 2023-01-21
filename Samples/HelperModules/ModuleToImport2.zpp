@@ -1,0 +1,6 @@
+stdin: u64 = 0
+stdout: u64 = 1
+stderr: u64 = 2
+
+fn DoSomethingWithFD(file_descriptor: u64) -> void:
+  pass

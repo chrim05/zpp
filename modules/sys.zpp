@@ -1,4 +1,0 @@
-type Error = i32
-
-Ok: Error = 0
-Err: Error = 1

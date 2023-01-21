@@ -283,8 +283,9 @@ class Parser:
 
     self.expect_and_consume(')', allow_on_new_line=True)
 
-    if node_to_call.kind != 'id' and is_internal_call:
-      error('internal calls need an specific id, not an expression', node_to_call.pos)
+    if node_to_call.kind == 'dot_node':
+      args.insert(0, node_to_call.left_expr)
+      node_to_call = node_to_call.right_expr
     
     return self.make_node(
       'call_node',
@@ -343,7 +344,7 @@ class Parser:
     term = self.consume_cur()
 
     match term.kind:
-      case 'num' | 'fnum' | 'id' | 'true' | 'false' | 'null' | 'undefined' | 'str' | 'chr':
+      case 'num' | 'fnum' | 'id' | 'True' | 'False' | 'None' | 'Undefined' | 'Ok' | 'Err' | 'str' | 'chr':
         pass
     
       case '[':
@@ -352,9 +353,8 @@ class Parser:
         else:
           term = self.parses_array_init_node(term.pos)
     
-      case '+' | '-' | '&' | '*' | 'not':
+      case '+' | '-' | 'not':
         op = term
-        is_mut = (self.consume_tok_if_match('mut') is not None) if op.kind == '&' else None
         expr = self.parse_term()
 
         term = self.make_node(
@@ -363,9 +363,6 @@ class Parser:
           expr=expr,
           pos=op.pos
         )
-
-        if op.kind == '&':
-          term.is_mut = is_mut
       
       case '(':
         if self.match_pattern(['id', ':'], True):
@@ -377,28 +374,42 @@ class Parser:
       case _:
         error('invalid term in expression', term.pos)
     
-    # matching call node
-    if self.match_toks(['!', '(']):
-      if term.kind != 'id':
-        error('expected id, to invoke pointers use `invoke!()`', term.pos)
-
-      is_internal_call = self.consume_tok_if_match('!') is not None
-      term = self.parse_call_node(term, is_internal_call)
-    
-    while self.match_toks(['.', '->', '['], allow_on_new_line=True):
+    while self.match_toks(['.', '[', '(', '!'], allow_on_new_line=True):
       if self.cur.kind == '[':
         pos = self.consume_cur().pos
         term = self.make_node('index_node', instance_expr=term, index_expr=self.parse_expr(), pos=pos)
         self.expect_and_consume(']')
         continue
+      
+      # matching call node
+      if self.cur.kind in ['!', '(']:
+        if term.kind not in ['id', 'dot_node']:
+          error('expected id, to invoke pointers use `Invoke!()`', term.pos)
+
+        is_internal_call = self.consume_tok_if_match('!') is not None
+        term = self.parse_call_node(term, is_internal_call)
+        continue
 
       dot_tok = self.consume_cur()
-      left_expr = term if dot_tok.kind == '.' else self.make_node(
-        'unary_node',
-        op=Node('*', value='*', pos=dot_tok.pos),
-        expr=term,
-        pos=dot_tok.pos
-      )
+      left_expr = term
+
+      if dot_tok.kind == '.' and self.match_toks(['&', '*', 'cast']):
+        op = self.consume_cur()
+        is_mut = op.kind == '&' and self.consume_tok_if_match('mut') is not None
+
+        if op.kind == 'cast':
+          term = self.parse_cast_node(term, op)
+        else:
+          term = self.make_node(
+            'unary_node',
+            op=op,
+            expr=term,
+            is_mut=is_mut,
+            pos=dot_tok.pos
+          )
+        
+        continue
+      
       right_expr = self.expect_and_consume('id')
 
       term = self.make_node(
@@ -409,6 +420,20 @@ class Parser:
       )
     
     return term
+  
+  def parse_cast_node(self, term_node, op):
+    pos = op.pos
+    
+    self.expect_and_consume('(')
+    type_node = self.parse_type()
+    self.expect_and_consume(')')
+
+    return self.make_node(
+      'as_node',
+      expr=term_node,
+      type=type_node,
+      pos=pos
+    )
   
   def parse_struct_init_node(self, pos, is_union_node=False):
     fields = []
@@ -436,21 +461,6 @@ class Parser:
       fields=fields,
       pos=pos
     )
-
-  def parse_large_term(self, allow_left_on_new_line):
-    self.throw_error_when_tok_on_new_line_and_not_allowed(allow_left_on_new_line)
-
-    term = self.parse_term()
-
-    while self.match_toks(['as']):
-      match self.cur.kind:
-        case 'as':
-          term = self.parse_as_node(term)
-
-        case _:
-          raise NotImplementedError()
-    
-    return term
   
   def parse_inline_if_node(self, if_expr):
     pos = self.consume_cur().pos
@@ -468,18 +478,7 @@ class Parser:
 
   def throw_error_when_tok_on_new_line_and_not_allowed(self, allow_left_on_new_line):
     if not allow_left_on_new_line and self.cur.is_on_new_line:
-      error('expression not allowed to be on a new line', self.cur.pos)
-  
-  def parse_as_node(self, expr_node):
-    pos = self.consume_cur().pos
-    type_node = self.parse_type()
-
-    return self.make_node(
-      'as_node',
-      expr=expr_node,
-      type=type_node,
-      pos=pos
-    )
+      error('expression not allowed to be on a new line', self.cur.pos)  
 
   def consume_tok_if_match(self, kind, allow_on_new_line=False):
     if not self.match_tok(kind, allow_on_new_line=allow_on_new_line):
@@ -493,7 +492,7 @@ class Parser:
         allow_left_on_new_line,['and'], lambda: self.parse_bin(
           allow_left_on_new_line, ['==', '!=', '<', '>', '<=', '>='], lambda: self.parse_bin(
             allow_left_on_new_line, ['+', '-'], lambda: self.parse_bin(
-              allow_left_on_new_line, ['*', '/', '%'], lambda: self.parse_large_term(allow_left_on_new_line)
+              allow_left_on_new_line, ['*', '/', '%'], lambda: self.parse_term()
             )
           )
         )
@@ -886,7 +885,7 @@ class Parser:
       name = self.expect_and_consume('id', allow_on_new_line=True)
       alias = name
 
-      if self.match_tok('as'):
+      if self.match_tok('->'):
         self.advance()
         alias = self.expect_and_consume('id')
 

@@ -43,7 +43,7 @@ fn main(argc: u32, argv: **u8) -> Error:
   -- because, for some reason, specific files are correctly printed but
   -- at the same time their 'file_size' and 'len' are different
   -- ('len' represent the real size, until eof)
-  len: u64 = fread(buffer, type_size!(|u8|), file_size, file_stream)
+  len: u64 = fread(buffer, TypeSize!(|u8|), file_size, file_stream)
   try print((ptr: buffer as *u8, len: len))
 
   return Ok

@@ -159,5 +159,5 @@ def get_full_path_from_brother_file(brother_filepath, filepath):
   brother_filepath = fixpath(brother_filepath)
   return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)
 
-INTRINSICMOD_TRACE_ZPP = get_full_path_from_brother_file(__file__, 'intrinsic_modules/trace.zpp')
+INTRINSICMOD_TRACE_ZPP = get_full_path_from_brother_file(__file__, 'IntrinsicModules/Trace.zpp')
 intrinsic_modules = [INTRINSICMOD_TRACE_ZPP]

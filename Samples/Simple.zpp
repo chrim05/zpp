@@ -1,10 +1,10 @@
 -- todo
+-- + generics infer in calls
 -- + arch!()
 -- + operators for ~ | & << >>
 -- + num literals octal/hex/binary notation
+-- + `export('c_fn_name') fn ..`
 -- + overflow/index_out_of_bounds/etc.. checking in debug builds
 
-from '../modules/sys.zpp' import [ Error, Ok ]
-
-fn main(argc: u32, argv: **u8) -> Error:
+fn Main(argc: u32, argv: **u8) -> Error:
   return Ok

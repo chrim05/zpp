@@ -4,12 +4,12 @@ from utils import error
 SKIPPABLE = [' ', '\n', '\t', '\\']
 DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=', '!=', '<=', '>=']
 KEYWORDS = [
-  'fn', 'pass', 'if', 'elif', 'else',
-  'return', 'true', 'false', 'null', 'type',
-  'as', 'while', 'break', 'continue', 'mut',
-  'for', 'undefined', 'import', 'and', 'or',
+  'fn', 'pass', 'if', 'elif', 'else', 'return',
+  'Undefined', 'True', 'False', 'None', 'Ok', 'Err',
+  'type', 'while', 'break', 'continue', 'mut',
+  'for', 'import', 'and', 'or',
   'not', 'try', 'out', 'from', 'defer', 'test',
-  'match', 'case'
+  'match', 'case', 'cast'
 ]
 
 class Lexer:
@@ -123,11 +123,14 @@ class Lexer:
     is_digit = self.cur.isdigit()
     is_ident = not is_digit
 
-    while self.has_char and (
-      self.cur.isalnum() or
-      (is_digit and self.cur in ["'", '.']) or
-      (is_ident and self.cur == '_')
-    ):
+    while self.has_char:
+      if is_ident and (self.cur.isalnum() or self.cur == '_'):
+        pass
+      elif is_digit and (self.cur.isdigit() or self.cur in ["'", '.']):
+        pass
+      else:
+        break
+
       t += self.cur
       self.advance()
     
@@ -136,6 +139,10 @@ class Lexer:
     if is_digit:
       new_t = t.replace("'", '')
 
+      if t.endswith('.') or t.endswith("'"):
+        self.advance(-1)
+        new_t = new_t.rstrip(".'")
+
       try:
         _ = float(new_t)
         failed_parsing = False
@@ -143,12 +150,12 @@ class Lexer:
         failed_parsing = True
 
       if (
-        ".'" in t or "'." in t or "''" in t or t.count('.') > 1 or
-        t.endswith("'") or t.endswith('.') or failed_parsing
-      ): 
+          ".'" in new_t or "'." in new_t or "''" in new_t \
+          or new_t.count('.') > 1 or failed_parsing
+      ):
         error('malformed num', p)
 
-      kind = 'fnum' if '.' in t else 'num'
+      kind = 'fnum' if '.' in new_t else 'num'
       t = new_t
     else:
       kind = t if t in KEYWORDS else 'id'

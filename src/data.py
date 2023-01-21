@@ -158,7 +158,7 @@ class Node:
         return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
 
       case _:
-        return self.value
+        return str(self.value)
 
 class MappedAst:
   def __init__(self):
@@ -268,6 +268,12 @@ class RealType:
 
   def is_ptr(self):
     return self.kind == 'ptr_rt'
+
+  def is_mut_ptr(self):
+    return self.is_ptr() and self.is_mut
+
+  def is_const_ptr(self):
+    return self.is_ptr() and not self.is_mut
   
   def is_struct(self):
     return self.kind == 'struct_rt'

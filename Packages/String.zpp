@@ -1,0 +1,3 @@
+from 'Array.zpp' import [ Array, Eq ]
+
+type String = Array[u8]

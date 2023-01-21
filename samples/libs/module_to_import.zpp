@@ -1,6 +1,0 @@
-from '../import.zpp' import [ add ]
-
-type Point = (x: i64, y: i64)
-
-fn point_add(a: *Point, b: *Point) -> Point:
-  return (x: add(a->x, b->x), y: add(a->y, b->y))
