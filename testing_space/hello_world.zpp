@@ -1,6 +1,6 @@
 from '../modules/io.zpp' import [ print ]
-from '../modules/sys.zpp' import [ Error, Ok ]
+from '../modules/sys.zpp' import [ Result, Ok ]
 
-fn main(argc: u32, argv: **u8) -> Error:
+fn main(argc: u32, argv: **u8) -> Result:
   try print('hello world!\n')
   return Ok

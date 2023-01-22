@@ -1,10 +1,23 @@
--- todo
--- + generics infer in calls
--- + arch!()
--- + operators for ~ | & << >>
+-- Todo (Done: /, Important: !, Normal: +)
+-- / generics infer in calls [DONE, but it doesn't work that well because of the bad compilerstructure]
+-- ! arch!()
+-- ! operators for ~ | & << >>
 -- + num literals octal/hex/binary notation
--- + `export('c_fn_name') fn ..`
+-- ! `export('c_fn_name') fn ..`
 -- + overflow/index_out_of_bounds/etc.. checking in debug builds
 
-fn Main(argc: u32, argv: **u8) -> Error:
-  return Ok
+fn Add(|T| a: T, b: T) -> T:
+  return a + b
+
+fn AddT1(|T1, T2| a: T1, b: T2, ab: (a: T1, b: T2)) -> T1:
+  return ab.a + a
+
+fn AddT2(|T1, T2| ab: (a: T1, b: T2), a: T1, b: T2) -> T2:
+  return ab.b + b
+
+fn Main(argc: u32, argv: **u8) -> Result:
+  -- todo -> Add(T, i32)
+  -- t1: u8 = AddT1(2.cast(u8), 2.cast(i32), (a: 1.cast(u8), b: 1.cast(i32)))
+  t2: i32 = AddT2((a: 1.cast(u8), b: 1.cast(i32)), 2.cast(u8), 2.cast(i32))
+
+  return t2

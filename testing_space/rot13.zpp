@@ -11,7 +11,7 @@ from '../modules/seq.zpp' import [
 ]
 
 from '../modules/libc.zpp' import [ puts ]
-from '../modules/sys.zpp' import [ Error, Err, Ok ]
+from '../modules/sys.zpp' import [ Result, Err, Ok ]
 
 -- returns whether 'c' is `a`..`z`
 fn is_lower(c: u8) -> u8:
@@ -64,7 +64,7 @@ fn process(allocator: *mut Allocator, source: String) -> String:
 --                  test area                     --
 ----------------------------------------------------
 
-fn make_test(processed: String, expected: String) -> Error:
+fn make_test(processed: String, expected: String) -> Result:
   if not string_eq(processed, expected):
     return Err
 

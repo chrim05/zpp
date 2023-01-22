@@ -110,8 +110,8 @@ fn Add(|T| a: T, b: T) -> T:
   return a + b
 
 test 'generic function':
-  a: u8 = 1.Add(|u8| 2)
-  b: i32 = 3.Add(|i32| 4)
+  a: u8 = 1.Add(2)
+  b: i32 = 3.Add(4)
 
   return Expect!(a.cast(i32) + b + 1 == 11)
 
@@ -188,7 +188,7 @@ test 'literals of any type':
 
   -- the `Undefined` value can also be passed to function calls 
   -- (it`s actually a value coercable to any type)
-  x: i32 = Add(|i32| 1, Undefined)
+  x: i32 = Add(1, Undefined)
 
   if x == 1:
     pass
@@ -210,7 +210,7 @@ test 'num and fnum literals':
 fn Foo(x: i64) -> u8:
   return 12
 
-fn Bar() -> Error:
+fn Bar() -> Result:
   return Ok
 
 test 'fn ptr':
@@ -219,7 +219,7 @@ test 'fn ptr':
   try Expect!(Invoke!(x, 10) == 12)
 
 test 'fn ptr2':
-  y: *fn() -> Error = FnToPtr!(Bar)
+  y: *fn() -> Result = FnToPtr!(Bar)
   try Invoke!(y)
 
 test 'not':
@@ -355,7 +355,7 @@ test 'struct construction and field access3':
 
   try Expect!(y.*.b.k + (y.*.b.w.*.m * y.*.b.w.*.n) == 7)
 
-SomeError: Error = 1
+SomeResult: Result = 1
 
 test 'must success':
   try Ok
@@ -364,17 +364,17 @@ test 'also must success':
   pass
 
 test 'must fail':
-  e: Error = SomeError
+  e: Result = SomeResult
 
   try e:
     return Ok
   
-  return SomeError
+  return SomeResult
 
-Overflow: Error = 1
-Underflow: Error = 2
+Overflow: Result = 1
+Underflow: Result = 2
 
-fn AddWithOverflow(|T| a: T, b: T, result: *mut T) -> Error:
+fn AddWithOverflow(|T| a: T, b: T, result: *mut T) -> Result:
   result.* = a + b
 
   if a > 0 and b > 0 and result.* < 0:
@@ -387,7 +387,7 @@ fn AddWithOverflow(|T| a: T, b: T, result: *mut T) -> Error:
   return Ok
 
 test 'try add_with_overflow (should overflow)':
-  try e: Error = AddWithOverflow(|i32| 2147483647, 2, out result: i32):
+  try e: Result = AddWithOverflow(2147483647, 2, out result: i32):
     if e != Overflow and e != Underflow:
       return -1
     
@@ -396,7 +396,7 @@ test 'try add_with_overflow (should overflow)':
   return Err
 
 test 'try try_with_overflow2 (should not overflow)':
-  try AddWithOverflow(|i32| 1, 2, out result: i32)
+  try AddWithOverflow(1, 2, out result: i32)
   try Expect!(result == 3)
 
 test 'undefined literal':
@@ -446,11 +446,11 @@ test 'union':
   try Expect!(animals.ptr[0].*.tag == AnimalKindCat)
   try Expect!(animals.ptr[1].*.tag == AnimalKindDog)
 
-  try Expect!(animals.ptr[0].*.data.cat.name.&.Eq(|u8| 'animal1'.&))
-  try Expect!(animals.ptr[1].*.data.dog.name.&.Eq(|u8| 'animal2'.&))
+  try Expect!(animals.ptr[0].*.data.cat.name.&.Eq('animal1'.&))
+  try Expect!(animals.ptr[1].*.data.dog.name.&.Eq('animal2'.&))
 
   try Expect!(animals.ptr[0].*.data.cat.color.RgbEq((r: 0, g: 1, b: 0)))
-  try Expect!(animals.ptr[1].*.data.dog.race_name.&.Eq(|u8| 'huskies'.&))
+  try Expect!(animals.ptr[1].*.data.dog.race_name.&.Eq('huskies'.&))
 
 test 'union2':
   x: [a: i64, b: i64, c: u8] = [a: 100]

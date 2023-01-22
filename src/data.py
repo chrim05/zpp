@@ -298,9 +298,34 @@ class RealType:
       case _:
         raise NotImplementedError()
   
+  def is_valid_realtype(self):
+    return self.kind not in ['placeholder_rt', 'generic_to_infer_rt']
+  
+  def contains_generics_to_infer(self):
+    match self.kind:
+      case 'ptr_rt' | 'static_array_rt':
+        return self.type.contains_generics_to_infer()
+      
+      case 'fn_rt':
+        return \
+          any(arg_rt.contains_generics_to_infer() for arg_rt in self.arg_types) or \
+          self.ret_type.contains_generics_to_infer()
+      
+      case 'union_rt' | 'struct_rt':
+        return any(field_rt.contains_generics_to_infer() for field_rt in self.fields.values())
+
+      case 'generic_to_infer_rt':
+        return True
+
+      case _:
+        return False
+
   def internal_eq(self, obj, in_progress_struct_rt_ids=[]):
     if not isinstance(obj, RealType):
       return False
+    
+    if 'generic_to_infer_rt' in [self.kind, obj.kind]:
+      return True
     
     key = (id(self), id(obj))
     specials = ['struct_rt', 'union_rt']
@@ -365,7 +390,7 @@ class RealType:
         return '<placeholder_type>'
       
       case 'fn_rt':
-        return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
+        return f'fn({", ".join(map(lambda rt: rt.internal_repr(in_progress_struct_rt_ids), self.arg_types))}) -> {self.ret_type.internal_repr(in_progress_struct_rt_ids)}'
       
       case 'union_rt':
         fields = ", ".join(
@@ -374,8 +399,11 @@ class RealType:
 
         return f'[{fields}]'
 
+      case 'generic_to_infer_rt':
+        return f'${self.id}'
+
       case _:
-        raise NotImplementedError()
+        raise NotImplementedError(self.kind)
 
   def __repr__(self):
     return self.internal_repr()

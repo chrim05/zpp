@@ -1,5 +1,6 @@
 from genericpath import isdir, isfile
 from os import listdir, system
+from subprocess import Popen
 from lex import lex
 from parse import parse
 from mapast import cache_mapast
@@ -107,11 +108,12 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   if has_to_be_runned:
     try:
       args = argv[argv.index('--') + 1:]
-      args = ' '.join(map(lambda arg: f'"{arg}"' if ' ' in arg else arg, args))
     except ValueError:
-      args = ''
+      args = []
     
-    result = system(f'{output_filepath} {args}')
+    with Popen([output_filepath] + args) as p:
+      result = p.wait()
+
     if is_test and (exitcode := result) != 0:
       error(f'test executable expected to have `exitcode = 0`, got `{exitcode}`', None)
     
@@ -127,8 +129,7 @@ def main():
     return
 
   if argv[1] not in ['test', 'run']:
-    compile_file(argv[1], False, False)
-    return
+    return compile_file(argv[1], False, False)
   
   srcpath = argv[2]
   files = collect_zpp_files_in_dir(srcpath) if isdir(srcpath) and argv[1] == 'test' else [srcpath]
@@ -136,7 +137,12 @@ def main():
   for file in files:
     r = compile_file(file, argv[1] == 'test', True)
   
-  exit(r)
+  return r
 
 if __name__ == '__main__':
-  main()
+  r = main()
+
+  if '--print-exit-code' in argv:
+    print(f'\nExitCode({r})\n')
+
+  exit(r)

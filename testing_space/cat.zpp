@@ -1,5 +1,5 @@
 from '../modules/libc.zpp' import [ OpenModeRead, CFile, fopen, fread, fclose ]
-from '../modules/sys.zpp' import [ Error, Ok ]
+from '../modules/sys.zpp' import [ Result, Ok ]
 from '../modules/io.zpp' import [ get_file_stream_size, print, printf ]
 from '../modules/seq.zpp' import [ create_string ]
 
@@ -9,11 +9,11 @@ from '../modules/mem.zpp' import [
   create_seq
 ]
 
-BadArguments: Error = 1
-NoSuchFile: Error = 2
-ReadFailed: Error = 3
+BadArguments: Result = 1
+NoSuchFile: Result = 2
+ReadFailed: Result = 3
 
-fn main(argc: u32, argv: **u8) -> Error:
+fn main(argc: u32, argv: **u8) -> Result:
   -- we need a path
   if argc != 2:
     try print('expected `1` argument\n')
