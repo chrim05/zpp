@@ -5,11 +5,12 @@ SKIPPABLE = [' ', '\n', '\t', '\\']
 DOUBLE_PUNCTUATION = ['==', '->', '..', '+=', '-=', '*=', '!=', '<=', '>=']
 KEYWORDS = [
   'fn', 'pass', 'if', 'elif', 'else', 'return',
-  'Undefined', 'True', 'False', 'None', 'Ok', 'Err',
+  'Undefined', 'True', 'False', 'None',
   'type', 'while', 'break', 'continue', 'mut',
   'for', 'import', 'and', 'or',
   'not', 'try', 'out', 'from', 'defer', 'test',
-  'match', 'case', 'cast'
+  'match', 'case', 'cast',
+  'ref'
 ]
 
 class Lexer:

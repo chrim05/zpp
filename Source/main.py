@@ -3,7 +3,7 @@ from os import listdir, system
 from subprocess import Popen
 from lex import lex
 from parse import parse
-from mapast import cache_mapast
+from mapast import cache_mapast, gen_and_cache_module_setupper
 from gen import gen, gen_tests
 from sys import argv
 from utils import *
@@ -28,6 +28,8 @@ def compile(path, gen_tests_instead=False):
   ast = parse(toks)
   g = cache_mapast(path, ast)
   check_imports_of_all_modules()
+
+  gen_and_cache_module_setupper(g)
 
   if gen_tests_instead:
     gen_tests(g)
@@ -111,8 +113,11 @@ def compile_file(srcpath, is_test, has_to_be_runned):
     except ValueError:
       args = []
     
-    with Popen([output_filepath] + args) as p:
-      result = p.wait()
+    try:
+      with Popen([output_filepath] + args) as p:
+        result = p.wait()
+    except KeyboardInterrupt:
+      exit(1)
 
     if is_test and (exitcode := result) != 0:
       error(f'test executable expected to have `exitcode = 0`, got `{exitcode}`', None)

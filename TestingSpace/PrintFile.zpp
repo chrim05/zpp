@@ -35,10 +35,10 @@ fn main(argc: u32, argv: **u8) -> Result:
   -- we also deallocate all at the end of the scope
   try get_file_stream_size(file_stream, out file_size: u64)
   allocator: Allocator = create_allocator(file_size)
-  defer drop_allocator(&mut allocator)
+  defer allocator.mut.drop_allocator()
 
   -- reading the file content into a buffer of the same size of the file
-  buffer: *mut u8 = create_seq(|u8| &mut allocator, file_size)
+  buffer: *mut u8 = allocator.mut.create_seq(|u8| file_size)
   -- we use 'len' instead of 'file_size' to construct the string to print
   -- because, for some reason, specific files are correctly printed but
   -- at the same time their 'file_size' and 'len' are different

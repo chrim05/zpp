@@ -1,2 +1,2 @@
-fn GetModuleName() -> *u8:
-  return Cstr!('module_to_import_a.zpp')
+fn get_module_name() -> *u8:
+  return cstr!('ModuleToImportA.zpp')

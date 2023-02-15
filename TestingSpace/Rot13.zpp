@@ -72,19 +72,19 @@ fn make_test(processed: String, expected: String) -> Result:
 
 test 'encrypting strings and compare them to the correct version (copied from internet)':
   allocator: Allocator = create_allocator(64)
-  defer drop_allocator(&mut allocator)
+  defer drop_allocator.mut allocator)
 
-  try make_test(process(&mut allocator, 'hElLo World!'), 'uRyYb Jbeyq!')
-  try make_test(process(&mut allocator, '123... hello  WORLD?'), '123... uryyb  JBEYQ?')
+  try make_test(process.mut allocator, 'hElLo World!'), 'uRyYb Jbeyq!')
+  try make_test(process.mut allocator, '123... hello  WORLD?'), '123... uryyb  JBEYQ?')
 
 test 'encrypting and decrypting strings and compare them to the original version (to test reverse process, aka decryption)':
   allocator: Allocator = create_allocator(128)
-  defer drop_allocator(&mut allocator)
+  defer drop_allocator.mut allocator)
 
   original: String = undefined
 
   original = 'hElLo World!'
-  try make_test(process(&mut allocator, process(&mut allocator, original)), original)
+  try make_test(process.mut allocator, process.mut allocator, original)), original)
 
   original = '123... hello  WORLD?'
-  try make_test(process(&mut allocator, process(&mut allocator, original)), original)
+  try make_test(process.mut allocator, process.mut allocator, original)), original)

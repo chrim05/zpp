@@ -1,3 +1,20 @@
-from 'Array.zpp' import [ Array, Eq ]
+from 'Array.zpp'  import [ Array, MutArray, eq ]
+from 'Memory.zpp' import [ free_collection ]
+from 'Libc.zpp'   import [ strlen ]
 
 type String = Array[u8]
+type MutString = MutArray[u8]
+
+-- Converts a null-terminated string of bytes
+-- into a fixed-length string
+fn cstr_to_string(cstr: *u8) -> String:
+  return (ptr: cstr, len: strlen(cstr))
+
+fn has_char_at_index(self: *String, index: u64) -> u8:
+  return index < self.*.len
+
+fn drop(self: *String) -> void:
+  free_collection(self.*.ptr)
+
+fn to_mut_string(self: *String) -> MutString:
+  return *cast(*MutString) self

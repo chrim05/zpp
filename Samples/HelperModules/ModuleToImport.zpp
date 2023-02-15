@@ -1,6 +1,6 @@
-from '../Import.zpp' import [ Add ]
+from '../Import.zpp' import [ add ]
 
 type Point = (x: i64, y: i64)
 
-fn PointAdd(a: *Point, b: *Point) -> Point:
-  return (x: Add(a.*.x, b.*.x), y: Add(a.*.y, b.*.y))
+fn point_add(a: *Point, b: *Point) -> Point:
+  return (x: add(a.*.x, b.*.x), y: add(a.*.y, b.*.y))

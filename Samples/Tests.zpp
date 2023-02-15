@@ -3,66 +3,66 @@ test 'and':
   b: u8 = True
   c: u8 = False
 
-  try not Expect!(a and b and c)
-  try not Expect!(a and c)
-  try not Expect!(b and c)
+  try not expect!(a and b and c)
+  try not expect!(a and c)
+  try not expect!(b and c)
 
 test 'and2':
   n: u8 = True
 
-  try not Expect!(False and n)
+  try not expect!(False and n)
 
 test 'array':
   a: [3 x i32] = [1, 2, 3]
-  b: *[3 x i32] = a.&
-  c: *mut i32 = b.cast(*mut i32)
+  b: *[3 x i32] = ref a
+  c: *mut i32 = cast(*mut i32) b
 
   a[0] = 2
   b.*[1] = 3
   c[2] = 4
 
-  try Expect!(a[0] + a[1] + a[2] == 9)
+  try expect!(a[0] + a[1] + a[2] == 9)
 
 test 'bool':
   x: u8 = True
   y: u8 = False
 
   if x or y:
-    return Ok
+    return .Ok
   
   if y or x:
-    return Ok
+    return .Ok
   
-  return Err
+  return .Err
 
 test 'bool2':
   x: u8 = False
   y: u8 = False
 
-  try not Expect!(x or y)
-  try not Expect!(y or x)
+  try not expect!(x or y)
+  try not expect!(y or x)
 
 test 'chr':
   x: u8 = `a`
   y: i32 = `b`
 
-  try Expect!(y - x.cast(i32) == 1)
+  try expect!(y - x.cast(i32) == 1)
 
-from '../Packages/Libc.zpp' import [ Malloc, Free ]
+from '../Packages/Libc.zpp' import [ malloc, free ]
 
 test 'defer':
-  x: *mut u8 = Malloc(TypeSize!(|i32|))
-  defer Free(x)
+  x: *mut u8 = malloc(type_size!(|i32|))
+  defer free(x)
 
-  x.cast(*mut i32).* = 2
+  *cast(*mut i32) x = 2
 
   -- in return expression is still available
   -- it means the free is called just before
   -- the terminator (return instruction)
-  return Expect!(x.cast(*i32).* == 2)
+  return expect!(*cast(*i32) x == 2)
 
 -- iterative fibonacci
-fn IterativeFib(n: u16) -> u64:
+fn ifib(n: u16) -> u64:
   a: u64 = 0
   b: u64 = 1
 
@@ -75,21 +75,21 @@ fn IterativeFib(n: u16) -> u64:
   return a
 
 -- recursive fibonacci
-fn RecursiveFib(n: u16) -> u64:
+fn rfib(n: u16) -> u64:
   return \
     n.cast(u64) \
       if n <= 1 else \
-        RecursiveFib(n - 1) + RecursiveFib(n - 2)
+        rfib(n - 1) + rfib(n - 2)
 
 test 'iterative fib + recursive fib':
-  return Expect!(IterativeFib(20) + RecursiveFib(15) == 7375)
+  return expect!(ifib(20) + rfib(15) == 7375)
 
 test 'forloop':
   i: u32 = 0
   for .., i < 10, i += 1:
     pass
   
-  return Expect!(i == 10)
+  return expect!(i == 10)
 
 test 'floating points + nested if':
   x: f32 = 1.2
@@ -102,71 +102,71 @@ test 'floating points + nested if':
     if y == 2:
       if z == 2.1:
         if r:
-          return Ok
+          return .Ok
   
-  return Err
+  return .Err
 
-fn Add(|T| a: T, b: T) -> T:
+fn add(|T| a: T, b: T) -> T:
   return a + b
 
 test 'generic function':
-  a: u8 = 1.Add(2)
-  b: i32 = 3.Add(4)
+  a: u8 = 1.add(2)
+  b: i32 = 3.add(4)
 
-  return Expect!(a.cast(i32) + b + 1 == 11)
+  return expect!(a.cast(i32) + b + 1 == 11)
 
 type Node[T] = (data: T, next: *Node[T])
 
 test 'generic type':
   b: Node[i32] = (data: 2, next: None)
-  a: Node[i32] = (data: 1, next: b.&)
+  a: Node[i32] = (data: 1, next: ref b)
   
-  return Expect!(a.data + a.next.*.data == 3)
+  return expect!(a.data + a.next.*.data == 3)
 
-from 'HelperModules/ModuleToImport2.zpp' import [ stdout, stderr, DoSomethingWithFD ]
+from 'HelperModules/ModuleToImport2.zpp' import [ stdout, stderr, do_something_with_fd ]
 
 test 'global variables':
-  DoSomethingWithFD(stdout)
-  DoSomethingWithFD(stderr)
+  do_something_with_fd(stdout)
+  do_something_with_fd(stderr)
 
-  return Expect!(stdout + stderr == 3)
+  return expect!(stdout + stderr == 3)
 
 test 'elif statement':
   argc: u32 = 2
 
   if argc == 1:
-    return Err
+    return .Err
   elif argc == 2:
-    return Ok
+    return .Ok
   else:
-    return Err
+    return .Err
 
 test 'nested if statement':
   argc: u32 = 2
 
   if argc > 1:
     if argc == 2:
-      return Ok
+      return .Ok
     else:
-      return Err
+      return .Err
   else:
-    return Err
+    return .Err
 
 test 'inline if':
   a: u8 = True or False
 
-  return Expect!(a)
+  return expect!(a)
 
-from '../Packages/Array.zpp'  import [ Array, Eq ]
+from '../Packages/Array.zpp'  import [ Array, eq ]
 from '../Packages/String.zpp' import [ String ]
 
 type Vec3 = (x: u64, y: u64, z: u64)
 
 test 'literals of any type':
-  ThisIsConst: *u8 = Cstr!('this must be a comptime value')
+  ThisIsConst: *u8 = cstr!('this must be a comptime value')
   Size: u64 = 2
 
-  s: *u8 = Cstr!('hello world') -- this points to the data segment
+  s: *u8 = cstr!('hello world') -- this points to the data segment
   y: String = 'sized literal string' -- this also points to it
   c: u8 = `c`
   i: i32 = -1
@@ -176,10 +176,10 @@ test 'literals of any type':
   v: Vec3 = (x: 1, y: 2, z: 3)
   w: Vec3 = v
   a: [Size x i32] = [1, 2] -- static array
-  b: Array[i32] = (ptr: a.&.cast(*i32), len: 2) -- sized array
-  o: Array[i64] = [1, 2, 3].&
+  b: Array[i32] = (ptr: a.ref.cast(*i32), len: 2) -- sized array
+  o: Array[i64] = ref [1, 2, 3]
   
-  s = Cstr!('goodbye')
+  s = cstr!('goodbye')
   i = True
   u = `i`
   c = None
@@ -188,7 +188,7 @@ test 'literals of any type':
 
   -- the `Undefined` value can also be passed to function calls 
   -- (it`s actually a value coercable to any type)
-  x: i32 = Add(1, Undefined)
+  x: i32 = add(1, Undefined)
 
   if x == 1:
     pass
@@ -198,70 +198,70 @@ test 'literals of any type':
   -- we can discard non-void values
   .. = 1
 
-  return Expect!(y.len + u == 125)
+  return expect!(y.len + u == 125)
 
 test 'num and fnum literals':
   x: i32 = 1'000'000
   y: f32 = 1'000'000.2
   
-  try Expect!(x + y.cast(i32) == 2'000'000)
-  try Expect!(x.cast(f32) + y == 2'000'000.2)
+  try expect!(x + y.cast(i32) == 2'000'000)
+  try expect!(x.cast(f32) + y == 2'000'000.2)
 
-fn Foo(x: i64) -> u8:
+fn foo(x: i64) -> u8:
   return 12
 
-fn Bar() -> Result:
-  return Ok
+fn bar() -> Result:
+  return .Ok
 
 test 'fn ptr':
-  x: *fn(i64) -> u8 = FnToPtr!(Foo)
+  x: *fn(i64) -> u8 = fn2ptr!(foo)
 
-  try Expect!(Invoke!(x, 10) == 12)
+  try expect!(invoke!(x, 10) == 12)
 
 test 'fn ptr2':
-  y: *fn() -> Result = FnToPtr!(Bar)
-  try Invoke!(y)
+  y: *fn() -> Result = fn2ptr!(bar)
+  try invoke!(y)
 
 test 'not':
   a: u8 = False
   
-  try Expect!(not a)
+  try expect!(not a)
 
 test 'not2':
   a: u8 = False
 
-  try not Expect!(a)
+  try not expect!(a)
   
   if not a:
-    return Ok
+    return .Ok
   else:
-    return Err
+    return .Err
 
 test 'or':
   a: u8 = False
   b: u8 = True
   c: u8 = False
 
-  try not Expect!(a or c)
-  try Expect!(a or b or c)
+  try not expect!(a or c)
+  try expect!(a or b or c)
 
 test 'pointers':
   x: u8 = 0
-  y: *mut u8 = x.&mut
-  z: *u8 = x.&
-  w: *i32 = 10.&
-  -- k: *mut u8 = 10.&mut -- temporary expression allocation address cannot be mutable
+  y: *mut u8 = mut x
+  z: *u8 = ref x
+  w: *i32 = ref 10
+  -- k: *mut u8 = mut 10 -- temporary expression allocation address cannot be mutable
 
   x = 2
   x += 1
-  y.* = z.*
-  -- z.* = 1 --> unable to write to unmutable pointer
+  *y = *z
+  -- `*z = 1` --> unable to write to unmutable pointer
   
-  try Expect!(x == 3)
-  try Expect!(y.* == z.*)
+  try expect!(x == 3)
+  try expect!(*y == *z)
 
 -- iterative pow
-fn IterativePow(base: u64, exp: u16) -> u64:
+fn ipow(base: u64, exp: u16) -> u64:
   r: u64 = 1
 
   for .., exp > 0, exp -= 1:
@@ -270,17 +270,17 @@ fn IterativePow(base: u64, exp: u16) -> u64:
   return r
 
 -- recursive pow
-fn RecursivePow(base: u64, exp: u16) -> u64:
-  return 1 if exp == 0 else base * RecursivePow(base, exp - 1)
+fn rpow(base: u64, exp: u16) -> u64:
+  return 1 if exp == 0 else base * rpow(base, exp - 1)
 
 test 'iterative pow + recursive pow':
-  return Expect!(IterativePow(10, 2) + RecursivePow(10, 3) == 1100)
+  return expect!(ipow(10, 2) + rpow(10, 3) == 1100)
 
 test 'ptr array access':
-  argv: **u8 = Carr!([Cstr!('hello'), Cstr!('world')])
+  argv: **u8 = carr!([cstr!('hello'), cstr!('world')])
 
-  try Expect!(argv[0][0] == `h`)
-  try Expect!(argv[1][0] == `w`)
+  try expect!(argv[0][0] == `h`)
+  try expect!(argv[1][0] == `w`)
 
 type Couple = (a: u8, b: u8)
 
@@ -288,30 +288,30 @@ test 'ptr array access2':
   a: Couple = (a: 1, b: 2)
   b: Couple = (a: 3, b: 4)
 
-  ab: **Couple = Carr!([a.&, b.&])
+  ab: **Couple = carr!([ref a, ref b])
   
-  try Expect!((ab[0].*.a + ab[0].*.b) * (ab[1].*.a + ab[1].*.b) == 21)
+  try expect!((ab[0].*.a + ab[0].*.b) * (ab[1].*.a + ab[1].*.b) == 21)
 
 test 'static array':
   a: [3 x i32] = [1, 2, 3]
-  b: *[3 x i32] = a.&
+  b: *[3 x i32] = ref a
   c: *i32 = b.cast(*i32)
   
-  try Expect!(a[0] + b.*[1] + c[2] == 6)
+  try expect!(a[0] + b.*[1] + c[2] == 6)
 
 test 'carray':
-  x: *mut u16 = CarrMut!([1, 2, 3])
+  x: *mut u16 = carr_mut!([1, 2, 3])
   x[0] = 2
 
-  try Expect!(x[0] + x[1] + x[2] == 7)
+  try expect!(x[0] + x[1] + x[2] == 7)
 
 test 'str from array of chars':
-  x: *u16 = Carr!([`a`, `b`, `c`])
+  x: *u16 = carr!([`a`, `b`, `c`])
   -- using `u16` instead of `u8` to avoid overflow when adding together the chars
 
-  try Expect!(x[0] + x[1] + x[2] == `a` + `b` + `c`)
+  try expect!(x[0] + x[1] + x[2] == `a` + `b` + `c`)
 
-fn HashString(s: *String) -> u64:
+fn hash_string(s: *String) -> u64:
   result: u64 = 0
 
   for i: u64 = 0, i < s.*.len, i += 1:
@@ -320,22 +320,22 @@ fn HashString(s: *String) -> u64:
   return result
 
 test 'hashing String manually (iterating over String)':
-  try Expect!(HashString('hello world'.&) == 1116)
+  try expect!(hash_string(ref'hello world') == 1116)
 
 test 'cstring indexing':
-  x: *u8 = Cstr!('abc')
+  x: *u8 = cstr!('abc')
 
   -- casting each term to avoid overflow
   -- if we do `(x[0] + x[1] + ..).cast(i32)` we have UB
-  try Expect!(x[0].cast(i32) + x[1].cast(i32) + x[2].cast(i32) == 294)
+  try expect!(x[0].cast(i32) + x[1].cast(i32) + x[2].cast(i32) == 294)
 
 type Person = (name: *u8, age: u8)
 
 test 'struct constructions and field access':
   person: Person = (name: None, age: 2)
-  person2: Person = (name: None, age: 1) -- inferred
+  person2: Person = (name: None, age: 1) -- .infErred
   
-  try Expect!(person.age + person2.age == 3)
+  try expect!(person.age + person2.age == 3)
 
 test 'struct construction and field access2':
   x: (a: i32, b: (k: i32, w: i32)) = (a: 0, b: (k: 1, w: 2))
@@ -343,22 +343,22 @@ test 'struct construction and field access2':
   x.b.k = 2
   x.b.w *= 3
 
-  try Expect!(x.b.k + x.b.w == 8)
+  try expect!(x.b.k + x.b.w == 8)
 
 type K = (m: i32, n: i32)
 type R = (a: i32, b: (k: i32, w: *K))
 
 test 'struct construction and field access3':
   t: K = (m: 2, n: 3)
-  x: R = (a: 0, b: (k: 1, w: t.&))
-  y: *R = x.&
+  x: R = (a: 0, b: (k: 1, w: ref t))
+  y: *R = ref x
 
-  try Expect!(y.*.b.k + (y.*.b.w.*.m * y.*.b.w.*.n) == 7)
+  try expect!(y.*.b.k + (y.*.b.w.*.m * y.*.b.w.*.n) == 7)
 
 SomeResult: Result = 1
 
 test 'must success':
-  try Ok
+  try .Ok
 
 test 'also must success':
   pass
@@ -367,37 +367,34 @@ test 'must fail':
   e: Result = SomeResult
 
   try e:
-    return Ok
+    return .Ok
   
   return SomeResult
 
-Overflow: Result = 1
-Underflow: Result = 2
+fn add_with_overflow(|T| a: T, b: T, result: *mut T) -> Result:
+  *result = a + b
 
-fn AddWithOverflow(|T| a: T, b: T, result: *mut T) -> Result:
-  result.* = a + b
+  if a > 0 and b > 0 and *result < 0:
+    return .Overflow
 
-  if a > 0 and b > 0 and result.* < 0:
-    return Overflow
-
-  if a < 0 and b < 0 and result.* > 0:
-    return Underflow
+  if a < 0 and b < 0 and *result > 0:
+    return .Underflow
   
   -- everything worked
-  return Ok
+  return .Ok
 
 test 'try add_with_overflow (should overflow)':
-  try e: Result = AddWithOverflow(2147483647, 2, out result: i32):
-    if e != Overflow and e != Underflow:
+  try e: Result = add_with_overflow(2147483647, 2, out result: i32):
+    if e != .Overflow and e != .Underflow:
       return -1
     
-    return Ok
+    return .Ok
   
-  return Err
+  return .Err
 
 test 'try try_with_overflow2 (should not overflow)':
-  try AddWithOverflow(1, 2, out result: i32)
-  try Expect!(result == 3)
+  try add_with_overflow(1, 2, out result: i32)
+  try expect!(result == 3)
 
 test 'undefined literal':
   x: i32 = Undefined
@@ -411,14 +408,14 @@ test 'while loop':
   while i > 0:
     i -= 1
 
-  try Expect!(i == 0)
+  try expect!(i == 0)
 
 test 'type size':
-  try Expect!(TypeSize!(|(a: i32, b: i64)|) == 16)
-  try Expect!(TypeSize!(|(a: i32, b: i64, c: u8)|) == 8 * 3)
-  try Expect!(TypeSize!(|[4 x u8]|) == 4)
-  try Expect!(TypeSize!(|f64|) == 8)
-  try Expect!(TypeSize!(|*f32|) == 8)
+  try expect!(type_size!(|(a: i32, b: i64)|) == 16)
+  try expect!(type_size!(|(a: i32, b: i64, c: u8)|) == 8 * 3)
+  try expect!(type_size!(|[4 x u8]|) == 4)
+  try expect!(type_size!(|f64|) == 8)
+  try expect!(type_size!(|*f32|) == 8)
 
 type Rgb = (r: u8, g: u8, b: u8)
 type Cat = (name: String, color: Rgb)
@@ -430,7 +427,7 @@ type Animal = (tag: AnimalKind, data: [cat: Cat, dog: Dog])
 AnimalKindCat: AnimalKind = 0
 AnimalKindDog: AnimalKind = 1
 
-fn RgbEq(left: Rgb, right: Rgb) -> u8:
+fn rgb_eq(left: Rgb, right: Rgb) -> u8:
   return \
     left.r == right.r and \
     left.g == right.g and \
@@ -439,27 +436,27 @@ fn RgbEq(left: Rgb, right: Rgb) -> u8:
 test 'union':
   animal1: Animal = (tag: AnimalKindCat, data: [cat: (name: 'animal1', color: Undefined)])
   animal2: Animal = (tag: AnimalKindDog, data: [dog: (name: 'animal2', race_name: 'huskies')])
-  animals: Array[*Animal] = [animal1.&, animal2.&].&
+  animals: Array[*Animal] = ref [ref animal1, ref animal2]
 
   animal1.data.cat.color = (r: 0, g: 1, b: 0)
 
-  try Expect!(animals.ptr[0].*.tag == AnimalKindCat)
-  try Expect!(animals.ptr[1].*.tag == AnimalKindDog)
+  try expect!(animals.ptr[0].*.tag == AnimalKindCat)
+  try expect!(animals.ptr[1].*.tag == AnimalKindDog)
 
-  try Expect!(animals.ptr[0].*.data.cat.name.&.Eq('animal1'.&))
-  try Expect!(animals.ptr[1].*.data.dog.name.&.Eq('animal2'.&))
+  try expect!(animals.ptr[0].*.data.cat.name.ref.eq(ref 'animal1'))
+  try expect!(animals.ptr[1].*.data.dog.name.ref.eq(ref 'animal2'))
 
-  try Expect!(animals.ptr[0].*.data.cat.color.RgbEq((r: 0, g: 1, b: 0)))
-  try Expect!(animals.ptr[1].*.data.dog.race_name.&.Eq('huskies'.&))
+  try expect!(animals.ptr[0].*.data.cat.color.rgb_eq((r: 0, g: 1, b: 0)))
+  try expect!(animals.ptr[1].*.data.dog.race_name.ref.eq(ref 'huskies'))
 
 test 'union2':
   x: [a: i64, b: i64, c: u8] = [a: 100]
   y: [a: i64, b: i64, c: u8] = [a: 300]
 
-  try Expect!(x.a == x.b.cast(i64))
-  try Expect!(x.a == x.c.cast(i64))
+  try expect!(x.a == x.b.cast(i64))
+  try expect!(x.a == x.c.cast(i64))
 
-  try Expect!(y.a != y.c.cast(i64))
+  try expect!(y.a != y.c.cast(i64))
 
 test 'match':
   x: i32 = 10
@@ -469,15 +466,42 @@ test 'match':
       pass
     
     else:
-      return Ok
+      return .Ok
   
-  return Err
+  return .Err
 
 test 'match2':
   x: i32 = 10
 
   match x:
     case 10:
-      return Ok
+      return .Ok
   
-  return Err
+  return .Err
+
+test 'match3':
+  tag: u8 = .SomeValue
+
+  match tag:
+    case .NotThisValue:
+      return .Err
+    
+    case .SomeValue, .RandomValue:
+      return .Ok
+
+    else:
+      return .Err
+
+test 'match4':
+  tag: u8 = .SomeValue
+
+  match tag:
+    case .NotThisValue:
+      return .Err
+    
+    -- they are just inverted
+    case .RandomValue, .SomeValue:
+      return .Ok
+
+    else:
+      return .Err

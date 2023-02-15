@@ -1,0 +1,27 @@
+from 'Range.zpp'  import [ in_range_inclusive, range ]
+from 'String.zpp' import [ String ]
+
+-- todo -> use `const_cat!()` when available
+-- todo -> use constants instead when available
+digits: String                   = '0123456789'
+letters_digits: String           = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+lowercase_letters_digits: String = '0123456789abcdefghijklmnopqrstuvwxyz'
+uppercase_letters_digits: String = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+letters: String                  = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
+lowercase_letters: String        = 'abcdefghijklmnopqrstuvwxyz'
+uppercase_letters: String        = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'
+
+fn is_alphanum(c: u8) -> u8:
+  return c.is_alpha() or c.is_digit()
+
+fn is_digit(c: u8) -> u8:
+  return c.in_range_inclusive(range(`0`, `9`))
+
+fn is_alpha(c: u8) -> u8:
+  return c.is_lower() or c.is_upper()
+
+fn is_lower(c: u8) -> u8:
+  return c.in_range_inclusive(range(`a`, `z`))
+
+fn is_upper(c: u8) -> u8:
+  return c.in_range_inclusive(range(`A`, `Z`))

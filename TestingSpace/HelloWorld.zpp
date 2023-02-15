@@ -1,0 +1,4 @@
+from '../Packages/Io.zpp' import [ print ]
+
+fn main(argc: u32, argv: **u8) -> Result:
+  return print('hello world!\n')

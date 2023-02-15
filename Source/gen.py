@@ -1,5 +1,4 @@
 from copy import copy, deepcopy
-from sys import argv
 from data import ComparatorDict, MappedAst, Node, Proto, RealData, RealType, Symbol
 from mapast import get_full_path_from_brother_file
 from utils import *
@@ -7,7 +6,7 @@ import llvmlite.ir as ll
 
 import utils
 
-MAIN_FN_IDENTIFIER = 'Main'
+MAIN_FN_IDENTIFIER = 'main'
 ENTRY_FN_IDENTIFIER = 'main'
 
 REALTYPE_PLACEHOLDER = RealType('placeholder_rt')
@@ -49,7 +48,6 @@ class Generator:
     self.llvm_internal_vars_cache = utils.llvm_internal_vars_cache
     self.fn_in_evaluation = ComparatorDict()
     self.fn_evaluated = ComparatorDict()
-    self.global_evaluated = []
     self.namedtypes_in_evaluation = ComparatorDict()
     self.llvm_builders = [] # the last one is the builder in use
     self.ctx_types = []
@@ -59,14 +57,11 @@ class Generator:
     self.internal_vars = 0
     self.defer_stmts = []
     self.generic_ids_to_infer = []
+    self.setupper_llvmfn = None
   
   @property
   def defer_nodes(self):
     return self.defer_stmts[-1]
-
-  @defer_nodes.setter
-  def defer_nodes(self, value):
-    self.defer_stmts[-1] = value
   
   @property
   def base_map(self) -> MappedAst:
@@ -202,7 +197,7 @@ class Generator:
     return RealType('generic_to_infer_rt', id=generic_id)
 
   def evaluate_named_type(self, type_node, has_implicit_generics):
-    if type_node.value in self.generic_ids_to_infer:
+    if has_implicit_generics and type_node.value in self.generic_ids_to_infer:
       return self.make_generic_to_infer(type_node.value)
 
     sym = self.get_symbol(type_node.value, type_node.pos)
@@ -402,11 +397,11 @@ class Generator:
     if t.realtype.is_fn():
       error('expression has no concrete type here', node.pos)
 
-    if \
-      t.realtype.is_mut_ptr() and \
-        new_ctx.is_const_ptr() and \
-          t.realtype.type == new_ctx.type:
-
+    if (
+      t.realtype.is_mut_ptr() and
+      new_ctx.is_const_ptr() and
+      t.realtype.type == new_ctx.type
+    ):
       t.realtype = new_ctx
 
     return t
@@ -427,44 +422,37 @@ class Generator:
       llvm_data=llvm_data
     )
   
+  '''
   def evaluate_global_sym(self, sym):
-    key = id(sym)
-
-    if key in self.global_evaluated:
+    if not sym.is_comptime or hasattr(sym, 'realdata'):
       return
 
     var_decl_node = sym.node
 
     self.push_scope()
-    realtype = self.evaluate_type(var_decl_node.type)
-    realdata = self.evaluate_node(var_decl_node.expr, realtype)
+    sym.realtype = self.evaluate_type(var_decl_node.type)
+    sym.realdata = self.evaluate_node(var_decl_node.expr, sym.realtype)
     self.pop_scope()
     
-    self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
-    self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)
-
-    if sym.is_comptime:
-      sym.realdata = realdata
-    else:
-      glob = ll.GlobalVariable(self.output, self.convert_realtype_to_llvmtype(realtype), self.fixname_for_llvm(var_decl_node.name.value))
-      glob.initializer = realdata.llvm_data
-      sym.realtype = realtype
-      sym.llvm_data = glob
-
-    self.global_evaluated.append(key)
+    self.expect_realtype(sym.realtype, sym.realdata.realtype, var_decl_node.expr.pos)
+    self.expect_realdata_is_comptime_value(sym.realdata, var_decl_node.expr.pos)
+  '''
 
   def evaluate_id(self, id_tok):
     sym = self.get_symbol(id_tok.value, id_tok.pos)
 
     check_sym_is_local_or_global_var(id_tok, sym)
 
-    if sym.kind == 'global_var_sym':
-      sym.generator.push_builder(self.cur_builder)
-      sym.generator.evaluate_global_sym(sym)
-      sym.generator.pop_builder()
+    # if sym.kind == 'global_var_sym':
+    #   sym.generator.push_builder(self.cur_builder)
+    #   sym.generator.evaluate_global_sym(sym)
+    #   sym.generator.pop_builder()
 
     if sym.is_comptime:
       return sym.realdata
+
+    # if sym.is_comptime:
+    #    return sym.realdata
     
     llvm_data = self.llvm_load(self.cur_builder, sym.llvm_data, self.convert_realtype_to_llvmtype(sym.realtype))
     
@@ -474,7 +462,7 @@ class Generator:
     )
   
   def evaluate_defer_node_stmt(self, defer_node):
-    self.defer_nodes.insert(0, defer_node.node)
+    self.defer_nodes.insert(0, defer_node.body)
   
   def generate_llvm_bin_for_int(self, realdata_left, op, realdata_right, realtype_resulting_from_cmp):
     is_signed = realdata_left.realtype.is_signed if realdata_left.realtype.is_numeric() else True
@@ -645,10 +633,6 @@ class Generator:
       )
     )
 
-    # print(f'# for `{bin_node}`')
-    # print(and_result_var_node)
-    # print(and_node)
-
     self.evaluate_var_decl_node_stmt(and_result_var_node, type_is_already_evaluated=True)
     self.evaluate_if_node_stmt(and_node)
 
@@ -691,10 +675,6 @@ class Generator:
       elif_branches=[],
       else_branch=None
     )
-
-    # print(f'# for `{bin_node}`')
-    # print(and_result_var_node)
-    # print(and_node)
 
     self.evaluate_var_decl_node_stmt(and_result_var_node, type_is_already_evaluated=True)
     self.evaluate_if_node_stmt(and_node)
@@ -820,15 +800,34 @@ class Generator:
     )
   
   def lower_match_case_branch(self, lowered_node_kind, expr_to_match, case_branch):
+    cond = Node(
+      'bin_node',
+      op=Node('==', value='==', pos=case_branch.expr[0].pos),
+      left=expr_to_match,
+      right=case_branch.expr[0],
+      pos=case_branch.expr[0].pos
+    )
+
+    for expr in case_branch.expr[1:]:
+      cond = Node(
+        'bin_node',
+        op=Node('or', value='or', pos=expr.pos),
+        left=cond,
+        right=Node(
+          'bin_node',
+          op=Node('==', value='==', pos=expr.pos),
+          left=expr_to_match,
+          right=expr,
+          pos=expr.pos
+        ),
+        pos=expr.pos
+      )
+
+    # print(cond, end='\n\n')
+
     return Node(
       lowered_node_kind,
-      cond=Node(
-        'bin_node',
-        op=Node('==', value='==', pos=case_branch.pos),
-        left=expr_to_match,
-        right=case_branch.expr,
-        pos=case_branch.pos
-      ),
+      cond=cond,
       body=case_branch.body,
       pos=case_branch.pos
     )
@@ -857,9 +856,19 @@ class Generator:
     self.evaluate_var_decl_node_stmt(var_decl_node, type_is_implicit=True)
     self.evaluate_if_node_stmt(if_node)
 
-  def evaluate_dot_node(self, dot_node):
-    instance_realdata = self.evaluate_node(dot_node.left_expr, REALTYPE_PLACEHOLDER)
+  def evaluate_dot_node(self, dot_node, left_expr_is_already_evaluated=False):
+    if left_expr_is_already_evaluated:
+      instance_realdata = dot_node.left_expr
+    else:
+      instance_realdata = self.evaluate_node(dot_node.left_expr, REALTYPE_PLACEHOLDER)
+
     field_name = dot_node.right_expr.value
+
+    if instance_realdata.realtype.is_static_array() and field_name == 'len':
+      return self.evaluate_num(
+        Node('num', value=str(instance_realdata.realtype.length), pos=dot_node.pos),
+        realtype_to_use=self.ctx_if_int_or(RealType('u64_rt'))
+      )
 
     self.expect_realdata_is_struct_or_union(instance_realdata, dot_node.pos)
 
@@ -940,10 +949,22 @@ class Generator:
     for i, realdata in enumerate(realdatas):
       llvm_data = self.llvm_insert_value(self.cur_builder, llvm_data, realdata.llvm_data, i, element_llvm_type)
 
-    return RealData(
+    rd = RealData(
       realtype,
       llvm_data=llvm_data
     )
+
+    if self.realdatas_are_comptime(realdatas):
+      rd.value = realdatas
+    
+    return rd
+  
+  def realdatas_are_comptime(self, realdatas):
+    for rd in realdatas:
+      if not rd.is_comptime_value():
+        return False
+    
+    return True
 
   def evaluate_array_init_nodes(self, init_node, ctx_type_for_the_first_node):
     realdatas = []
@@ -978,10 +999,15 @@ class Generator:
       real_expected_value_llvm_type = self.convert_realtype_to_llvmtype(field_realdata.realtype, pos=init_node.fields[i].name.pos)
       llvm_data = self.llvm_insert_value(self.cur_builder, llvm_data, field_realdata.llvm_data, i, real_expected_value_llvm_type)
 
-    return RealData(
+    rd = RealData(
       realtype,
       llvm_data=llvm_data
     )
+
+    if self.realdatas_are_comptime(field_realdatas):
+      rd.value = { field_name: field_rd for field_name, field_rd in zip(field_names, field_realdatas) }
+    
+    return rd
 
   def make_numeric_cast(self, realdata_expr, target_rt):
     source_bits = realdata_expr.realtype.bits
@@ -1090,7 +1116,7 @@ class Generator:
 
     return self.evaluate_unary_node(Node(
       'unary_node',
-      op=Node('&', value='&', pos=out_node.pos),
+      op=Node('mut', value='mut', pos=out_node.pos),
       is_mut=True,
       expr=out_node.name,
       pos=out_node.pos
@@ -1098,7 +1124,7 @@ class Generator:
 
   def evaluate_unary_node(self, unary_node):
     match unary_node.op.kind:
-      case '&':
+      case 'ref' | 'mut':
         return self.evaluate_reference_node(unary_node)
       
       case 'not':
@@ -1146,6 +1172,9 @@ class Generator:
       self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
 
     if is_comptime:
+      if not realtype.can_be_handled_by_a_constant():
+        error('a local constant cannot handle this type', var_decl_node.pos)
+
       self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)
       llvm_data = realdata.llvm_data
     else:
@@ -1176,7 +1205,7 @@ class Generator:
     false_br = llvm_block_elif_condcheckers[0] if len(llvm_block_elif_branches) > 0 else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
     if cond_rd.is_comptime_value():
-      self.cur_builder.branch(llvm_block_if_branch if cond_rd.value else false_br)
+      self.cur_builder.branch(llvm_block_if_branch if cond_rd.is_true() else false_br)
     else:
       self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_if_branch, false_br)
 
@@ -1195,7 +1224,7 @@ class Generator:
       false_br = llvm_block_elif_condcheckers[i + 1] if i + 1 < len(llvm_block_elif_branches) else llvm_block_else_branch if has_else_branch else llvm_exit_block
 
       if cond_rd.is_comptime_value():
-        self.cur_builder.branch(llvm_block_elif_branches[i] if cond_rd.value else false_br)
+        self.cur_builder.branch(llvm_block_elif_branches[i] if cond_rd.is_true() else false_br)
       else:
         self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_elif_branches[i], false_br)
 
@@ -1237,9 +1266,6 @@ class Generator:
       self.expect_realtype(cur_fn_ret_type, RealType('void_rt'), return_node.pos)
       self.cur_builder.ret_void()
       return
-    
-    # self.evaluate_defer_nodes()
-    # self.defer_nodes = []
 
     expr = self.evaluate_node(return_node.expr, cur_fn_ret_type)
     self.expect_realtype(cur_fn_ret_type, expr.realtype, return_node.expr.pos)
@@ -1260,29 +1286,32 @@ class Generator:
     
     error(f'unexpected `{len(call_node.args)}` args', call_node.pos)
 
-  def evaluate_internal_call_to_PtrToInt(self, call_node):
-    self.expect_generics_count(call_node, lambda count: count == 1)
+  def evaluate_internal_call_to_ptr2int(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 1)
 
-    generic_realtype = self.evaluate_type(call_node.generics[0])
-    if not generic_realtype.is_int():
-      error(f'expected int generic type, got `{generic_realtype}`', call_node.generics[0].pos)
-
+    return_type = RealType('u64_rt')
     realdata = self.evaluate_node(call_node.args[0], REALTYPE_PLACEHOLDER)
     self.expect_realdata_is_ptr(realdata, call_node.args[0].pos)
     
     return RealData(
-      generic_realtype,
-      llvm_data=self.cur_builder.ptrtoint(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
+      return_type,
+      llvm_data=self.cur_builder.ptrtoint(realdata.llvm_data, self.convert_realtype_to_llvmtype(return_type))
     )
 
-  def evaluate_internal_call_to_IntToPtr(self, call_node):
-    self.expect_generics_count(call_node, lambda count: count == 1)
+  def evaluate_internal_call_to_int2ptr(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count in [0, 1])
     self.expect_args_count(call_node, lambda count: count == 1)
 
-    generic_realtype = self.evaluate_type(call_node.generics[0])
+    if len(call_node.generics) == 0:
+      generic_realtype = self.ctx
+      err = lambda: error(f'unable to infer return type due to ambigous context, provide a generic type', call_node.pos)
+    else:
+      generic_realtype = self.evaluate_type(call_node.generics[0])
+      err = lambda: error(f'expected ptr generic type, got `{generic_realtype}`', call_node.generics[0].pos)
+      
     if not generic_realtype.is_ptr():
-      error(f'expected ptr generic type, got `{generic_realtype}`', call_node.generics[0].pos)
+      err()
 
     realdata = self.evaluate_node(call_node.args[0], RealType('u64_rt'))
     self.expect_realdata_is_integer(realdata, call_node.args[0].pos)
@@ -1292,7 +1321,7 @@ class Generator:
       llvm_data=self.cur_builder.inttoptr(realdata.llvm_data, self.convert_realtype_to_llvmtype(generic_realtype))
     )
 
-  def evaluate_internal_call_to_Invoke(self, call_node):
+  def evaluate_internal_call_to_invoke(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count > 0)
     realdata_args = []
@@ -1318,7 +1347,7 @@ class Generator:
       llvm_data=llvm_call
     )
 
-  def evaluate_internal_call_to_FnToPtr(self, call_node):
+  def evaluate_internal_call_to_fn2ptr(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 1)
 
@@ -1343,7 +1372,7 @@ class Generator:
       llvm_data=llvm_data
     )
   
-  def evaluate_internal_call_to_Cstr(self, call_node):
+  def evaluate_internal_call_to_cstr(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 1)
 
@@ -1357,10 +1386,10 @@ class Generator:
       llvm_data=llvm_data
     )
   
-  def evaluate_internal_call_to_CarrMut(self, call_node):
-    return self.evaluate_internal_call_to_Carr(call_node, construct_as_mut=True)
+  def evaluate_internal_call_to_carr_mut(self, call_node):
+    return self.evaluate_internal_call_to_carr(call_node, construct_as_mut=True)
 
-  def evaluate_internal_call_to_Carr(self, call_node, construct_as_mut=False):
+  def evaluate_internal_call_to_carr(self, call_node, construct_as_mut=False):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 1)
 
@@ -1370,7 +1399,7 @@ class Generator:
       error('expected static array initializer', arg.pos)
     
     realdata = self.evaluate_node(
-      Node('unary_node', is_mut=False, op=Node('&', value='&', pos=call_node.pos), expr=arg, pos=call_node.pos),
+      Node('unary_node', is_mut=False, op=Node('ref', value='ref', pos=call_node.pos), expr=arg, pos=call_node.pos),
       self.ctx
     )
 
@@ -1378,15 +1407,109 @@ class Generator:
     realdata.realtype = RealType('ptr_rt', is_mut=construct_as_mut, type=realdata.realtype.type.type)
 
     return realdata
+  
+  def gen_formats(self, rd):
+    if rd.realtype.is_int():
+      return (f'{{{rd.realtype}}}', [rd])
 
-  def evaluate_internal_call_to_Args(self, call_node):
+    match rd.realtype.kind:
+      case 'ptr_rt':
+        fmt, args = self.gen_formats(RealData(
+          rd.realtype.type,
+          llvm_data=self.llvm_load(self.cur_builder, rd.llvm_data, self.convert_realtype_to_llvmtype(rd.realtype.type))
+        ))
+
+        return (f'&{fmt}', args)
+      
+      case 'struct_rt':
+        raise NotImplementedError()
+        args = []
+
+        create_dot_node_for_field = lambda field_name: Node(
+          'dot_node',
+          left_expr=rd,
+          right_expr=Node('id', value=field_name, pos=None),
+          pos=None
+        )
+        def gen_formats_for_field(field_name, field_rt):
+          nonlocal args
+
+          fmt, field_args = self.gen_formats(RealData(
+            field_rt,
+            llvm_data=self.evaluate_dot_node(
+              create_dot_node_for_field(field_name),
+              left_expr_is_already_evaluated=True
+            )
+          ))
+
+          args += field_args
+
+          return fmt
+
+        fields = [
+          f'{field_name}: {gen_formats_for_field(field_name, field_rt)}'
+            for field_name, field_rt in rd.realtype.fields.items()
+        ]
+
+        return (f'({", ".join(fields)})', args)
+
+      case _:
+        raise NotImplementedError(rd.realtype.kind)
+
+  def evaluate_internal_call_to_inspect(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 1)
+
+    result = RealData(
+      realtype=RealType('void_rt'),
+      llvm_data=None
+    )
+
+    if is_release_build():
+      return result
+    
+    to_inspect = call_node.args[0]
+    realdata = self.evaluate_node(to_inspect, REALTYPE_PLACEHOLDER)
+    fmt, args = self.gen_formats(realdata)
+    printf_llvmfn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_IO_ZPP, 'printf')
+    print(fmt)
+    print(args)
+
+    fmt = f'logged `inspect!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`: {call_node} -> {fmt}\n\n'
+
+    self.cur_builder.call(
+      printf_llvmfn,
+      [
+        self.evaluate_str(Node('str', value=fmt, pos=None)).llvm_data,
+        self.evaluate_internal_call_to_args(
+          Node(
+            'call_node',
+            name=Node('id', value='args', pos=None),
+            generics=[],
+            is_internal_call=True,
+            args=args,
+            pos=None
+          ),
+          args_are_already_evaluated=True
+        ).llvm_data
+      ]
+    )
+
+    return result
+
+  def evaluate_internal_call_to_args(self, call_node, args_are_already_evaluated=False):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count > 0)
 
-    realdatas = [self.evaluate_node(arg, REALTYPE_PLACEHOLDER) for arg in call_node.args]
+    if args_are_already_evaluated:
+      realdatas = call_node.args
+    else:
+      realdatas = [self.evaluate_node(arg, REALTYPE_PLACEHOLDER) for arg in call_node.args]
+
     realtypes = [rd.realtype for rd in realdatas]
     llvm_type = ll.LiteralStructType(
-      [self.convert_realtype_to_llvmtype(rt) for rt in realtypes]
+      [self.convert_realtype_to_llvmtype(rt) for rt in realtypes],
+      packed=True
     )
 
     llvm_data = self.allocas_builder.alloca(llvm_type, name='vargs')
@@ -1400,10 +1523,10 @@ class Generator:
       llvm_data=self.cur_builder.bitcast(llvm_data, ll.PointerType(ll.IntType(8)))
     )
 
-  def evaluate_internal_call_to_InternalVar(self, call_node):
+  def evaluate_internal_call_to_internal_var(self, call_node):
     return self.evaluate_lib_var(call_node, True)
 
-  def evaluate_internal_call_to_ExternVar(self, call_node):
+  def evaluate_internal_call_to_extern_var(self, call_node):
     return self.evaluate_lib_var(call_node, False)
 
   def evaluate_lib_var(self, call_node, is_internal):
@@ -1431,22 +1554,50 @@ class Generator:
       llvm_data=llvm_data
     )
 
-  def evaluate_internal_call_to_IsReleaseBuild(self, call_node):
+  def evaluate_internal_call_to_is_release_build(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
     return self.evaluate_True(call_node) if is_release_build() else self.evaluate_False(call_node)
 
-  def evaluate_internal_call_to_IsDebugBuild(self, call_node):
+  def evaluate_internal_call_to_comptime_print(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count > 0)
+
+    result = RealData(RealType('void_rt'), llvm_data=None)
+
+    if is_release_build():
+      return result
+
+    strings = []
+
+    for arg in call_node.args:
+      realdata = self.evaluate_node(arg, STRING_REALTYPE)
+      self.expect_realdata_is_comptime_value(realdata, arg.pos)
+      
+      strings.append(realdata.value)
+    
+    print(*strings, sep='')
+    return result
+
+  def evaluate_internal_call_to_type_name(self, call_node):
+    self.expect_generics_count(call_node, lambda count: count == 1)
+    self.expect_args_count(call_node, lambda count: count == 0)
+
+    arg_type = call_node.generics[0]
+    realtype = self.evaluate_type(arg_type)
+    return self.evaluate_str(Node('str', value=repr(realtype), pos=arg_type.pos))
+
+  def evaluate_internal_call_to_is_debug_build(self, call_node):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count == 0)
 
     return self.evaluate_True(call_node) if is_debug_build() else self.evaluate_False(call_node)
   
-  def evaluate_internal_call_to_InternalCall(self, call_node):
+  def evaluate_internal_call_to_internal_call(self, call_node):
     return self.evaluate_lib_call(call_node, True)
     
-  def evaluate_internal_call_to_ExternCall(self, call_node):
+  def evaluate_internal_call_to_extern_call(self, call_node):
     return self.evaluate_lib_call(call_node, False)
 
   def evaluate_lib_call(self, call_node, is_internal):
@@ -1515,7 +1666,7 @@ class Generator:
     
     return node.value
   
-  def evaluate_internal_call_to_Panic(self, call_node):
+  def evaluate_internal_call_to_panic(self, call_node):
     create_result = lambda: RealData(RealType('void_rt'), llvm_data=None)
 
     if is_release_build():
@@ -1526,7 +1677,8 @@ class Generator:
     self.expect_generics_count(call_node, lambda count: count == 0)
 
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
-    message = f"reached `Panic!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`"
+    llvm_abort = self.cache_lib_fn('abort', RealType('void_rt'), [])
+    message = f"reached `panic!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`"
 
     if len(call_node.args) == 1:
       custom_msg = self.expect_node_is_literal_str(call_node.args[0]).replace("'", "\\'")
@@ -1534,6 +1686,7 @@ class Generator:
 
     emit_print_trace(self.cur_builder)
     self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(message)], None)
+    self.llvm_call(self.cur_builder, llvm_abort, [], None)
     self.cur_builder.unreachable()
 
     return create_result()
@@ -1542,7 +1695,7 @@ class Generator:
     name = self.cur_fn[0].name
     return 'test' if name.startswith('test.`') else name
 
-  def evaluate_internal_call_to_Assert(self, call_node):
+  def evaluate_internal_call_to_assert(self, call_node):
     create_result = lambda: RealData(RealType('void_rt'), llvm_data=None)
 
     if is_release_build():
@@ -1553,7 +1706,8 @@ class Generator:
 
     realdata = self.evaluate_condition_node(call_node.args[0])
     llvm_puts = self.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
-    failure_message = f'failed `Assert!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
+    llvm_abort = self.cache_lib_fn('abort', RealType('void_rt'), [])
+    failure_message = f'failed `assert!()` at {repr_pos(call_node.pos, use_path=True)}, in `{self.get_curfn_name()}`'
 
     if len(call_node.args) == 2:
       custom_msg = self.expect_node_is_literal_str(call_node.args[1]).replace("'", "\\'")
@@ -1567,6 +1721,7 @@ class Generator:
     self.push_builder(ll.IRBuilder(llvm_falsebr))
     emit_print_trace(self.cur_builder)
     self.llvm_call(self.cur_builder, llvm_puts, [self.cache_string(failure_message)], None)
+    self.llvm_call(self.cur_builder, llvm_abort, [], None)
     self.cur_builder.unreachable()
     self.pop_builder()
 
@@ -1574,15 +1729,15 @@ class Generator:
 
     return create_result()
 
-  def evaluate_internal_call_to_Expect(self, call_node):
+  def evaluate_internal_call_to_expect(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 1)
     self.expect_generics_count(call_node, lambda count: count == 0)
   
     call_node.args.append(Node('num', value='1', pos=call_node.pos))
 
-    return self.evaluate_internal_call_to_ExpectOr(call_node)
+    return self.evaluate_internal_call_to_expect_or(call_node)
   
-  def evaluate_internal_call_to_ExpectOr(self, call_node):
+  def evaluate_internal_call_to_expect_or(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 2)
     self.expect_generics_count(call_node, lambda count: count == 0)
 
@@ -1609,7 +1764,7 @@ class Generator:
       )
     )
   
-  def evaluate_internal_call_to_TypeSize(self, call_node):
+  def evaluate_internal_call_to_type_size(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 0)
     self.expect_generics_count(call_node, lambda count: count == 1)
 
@@ -1621,7 +1776,7 @@ class Generator:
       realtype_to_use=self.ctx_if_numeric_or(RealType('u64_rt'))
     )
 
-  def evaluate_internal_call_to_Here(self, call_node):
+  def evaluate_internal_call_to_here(self, call_node):
     self.expect_args_count(call_node, lambda count: count == 0)
     self.expect_generics_count(call_node, lambda count: count == 0)
 
@@ -1781,11 +1936,8 @@ class Generator:
     inferred = self.infer_generics_from_arg(inferred_generics, realtype, realtype, True, None)
     return inferred if not inferred.contains_generics_to_infer() else realtype
 
-  def infer_generics(self, generic_ids, call_node_args, fn_node, call_pos):
+  def infer_generics(self, generic_ids, call_node_args, proto, call_pos):
     realdata_args = []
-    self.generic_ids_to_infer = generic_ids
-    proto = self.evaluate_fn_proto(fn_node, has_implicit_generics=True)
-    
     inferred_generics = { generic_id: None for generic_id in generic_ids }
 
     # inferring from the return type
@@ -1799,9 +1951,7 @@ class Generator:
       self.expect_realtype(proto_arg_type, realdata_arg.realtype, arg_node.pos)
 
       self.infer_generics_from_arg(inferred_generics, proto.arg_types[i], realdata_arg.realtype, False, call_pos)
-    
-    self.generic_ids_to_infer = []
-    
+
     for i, (generic_id, generic_rt) in enumerate(inferred_generics.items()):
       if generic_rt is None:
         error(f'could not infer generic type `{generic_id}`', call_pos)
@@ -1815,18 +1965,29 @@ class Generator:
     fn = self.get_symbol(call_node.name.value, call_node.name.pos)
     check_sym_is_fn(call_node.name.value, fn)
 
-    call_generics_len = len(call_node.generics)
+    call_node_generics = call_node.generics
+    call_generics_len = len(call_node_generics)
     decl_generics_len = len(fn.node.generics)
     generic_lengths_match = call_generics_len == decl_generics_len
     generics_must_be_inferred = call_generics_len == 0 and not generic_lengths_match
 
     if generics_must_be_inferred:
-      realdata_args, call_node.generics = self.infer_generics(
-        [tok.value for tok in fn.node.generics],
+      generic_ids = [tok.value for tok in fn.node.generics]
+      
+      old, fn.generator.generic_ids_to_infer = fn.generator.generic_ids_to_infer, generic_ids
+      fn.generator.push_scope()
+      proto = fn.generator.evaluate_fn_proto(fn.node, has_implicit_generics=True)
+      fn.generator.pop_scope()
+      fn.generator.generic_ids_to_infer = old
+      
+      old, self.generic_ids_to_infer = self.generic_ids_to_infer, generic_ids
+      realdata_args, call_node_generics = self.infer_generics(
+        generic_ids,
         call_node.args,
-        fn.node,
+        proto,
         call_node.pos
       )
+      self.generic_ids_to_infer = old
     elif not generic_lengths_match:
       error(f'expected `{decl_generics_len}` generic args, got `{call_generics_len}`', call_node.pos)
 
@@ -1836,7 +1997,7 @@ class Generator:
     proto, llvmfn, _ = \
       fn.generator.gen_nongeneric_fn(fn) \
         if len(fn.node.generics) == 0 else \
-          fn.generator.gen_generic_fn(fn, self.evaluate_generics_in_call(call_node.generics))
+          fn.generator.gen_generic_fn(fn, self.evaluate_generics_in_call(call_node_generics))
 
     if not generics_must_be_inferred:
       realdata_args = []
@@ -1865,7 +2026,7 @@ class Generator:
     cond_rd = self.evaluate_condition_node(while_node.cond)
 
     if cond_rd.is_comptime_value():
-      self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
+      self.cur_builder.branch(llvm_block_loop if cond_rd.is_true() else llvm_block_exit)
     else:
       self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
 
@@ -1994,7 +2155,7 @@ class Generator:
       expr_node = old_expr_node
       realdata_expr = self.internal_evaluate_index_node(expr_node, realdata_expr)
     
-    allowed_opnames = ['load', 'bitcast'] if is_deref else ['load']
+    allowed_opnames = ['load', 'bitcast', 'inttoptr'] if is_deref else ['load']
 
     if realdata_expr.llvm_data.opname not in allowed_opnames:
       error('cannot assign a value to an expression', expr_node.pos)
@@ -2023,7 +2184,7 @@ class Generator:
     cond_rd = self.evaluate_condition_node(for_node.mid_node)
 
     if cond_rd.is_comptime_value():
-      self.cur_builder.branch(llvm_block_loop if cond_rd.value else llvm_block_exit)
+      self.cur_builder.branch(llvm_block_loop if cond_rd.value.is_true() else llvm_block_exit)
     else:
       self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
 
@@ -2066,7 +2227,7 @@ class Generator:
       '=': lambda: realdata_rexpr.llvm_data,
       '+=': lambda: self.cur_builder.add(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
       '-=': lambda: self.cur_builder.sub(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
-      '*=': lambda: self.cur_builder.mul(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data),
+      '*=': lambda: self.cur_builder.mul(self.llvm_load(self.cur_builder, realdata_lexpr.llvm_data, self.convert_realtype_to_llvmtype(realdata_rexpr.realtype)), realdata_rexpr.llvm_data)
     }[assignment_node.op.kind]()
 
     if not is_discard:
@@ -2118,7 +2279,7 @@ class Generator:
         self.fixname_for_llvm(f'str.{self.str_counter}')
       )
 
-      # llvm_data.linkage = 'private'
+      llvm_data.linkage = 'private'
       llvm_data.initializer = ll.Constant(t, bytearray((string + '\0').encode('ascii')))
     else:
       llvm_data = self.strings[string]
@@ -2141,7 +2302,7 @@ class Generator:
 
     if cond_rd.is_comptime_value():
       return self.evaluate_node(
-        inline_if_node.if_expr if cond_rd.value else inline_if_node.else_expr,
+        inline_if_node.if_expr if cond_rd.is_true() else inline_if_node.else_expr,
         self.ctx
       )
 
@@ -2173,6 +2334,20 @@ class Generator:
         [(if_realdata.llvm_data, llvm_block_if_branch), (else_realdata.llvm_data, llvm_block_else_branch)],
         self.convert_realtype_to_llvmtype(realtype)
       )
+    )
+  
+  def evaluate_enum_node(self, enum_node):
+    key = enum_node.id.value
+
+    if key not in utils.enums_cache:
+      utils.enums_cache[key] = utils.enums_count
+      utils.enums_count += 1
+
+    value = utils.enums_cache[key]
+
+    return self.evaluate_num(
+      Node('num', value=value, pos=enum_node.pos),
+      realtype_to_use=self.ctx_if_numeric_or(RealType('u8_rt'))
     )
   
   def evaluate_union_init_node(self, init_node):
@@ -2274,14 +2449,86 @@ class Generator:
       allocas_terminator = self.allocas_builder.block.terminator
       self.allocas_builder.remove(allocas_terminator)
     
-    for node in self.defer_nodes:
-      self.evaluate_stmt(node)
+    for nodes in self.defer_nodes:
+      for node in nodes:
+        self.evaluate_stmt(node)
     
     if terminator is not None:
       self.cur_builder.append(terminator)
     
     if allocas_terminator is not None:
       self.allocas_builder.append(allocas_terminator)
+  
+  def gen_module_setuper_fn(self):
+    name = self.fixname_for_llvm('@setupper')
+    proto = self.make_proto(
+      'fn_proto',
+      arg_types=[],
+      ret_type=RealType('void_rt'),
+      name=name,
+      is_test=False
+    )
+    self.setupper_llvmfn = ll.Function(
+      self.output,
+      self.convert_proto_to_llvmproto(proto),
+      name
+    )
+    fn_key = id(name)
+    llvmbuilder_allocas = ll.IRBuilder(self.setupper_llvmfn.append_basic_block('allocas'))
+    llvmbuilder_entry = ll.IRBuilder(self.setupper_llvmfn.append_basic_block('entry'))
+
+    self.fn_in_evaluation[fn_key] = (
+      proto,
+      self.setupper_llvmfn,
+      llvmbuilder_allocas
+    )
+
+    self.push_builder(llvmbuilder_entry)
+    self.push_scope()
+
+    for sym_id, sym in self.base_map.symbols.items():
+      if sym.kind != 'global_var_sym':
+        continue
+
+      var_decl_node = sym.node
+
+      self.push_scope()
+      realtype = self.evaluate_type(var_decl_node.type)
+      realdata = self.evaluate_node(var_decl_node.expr, realtype)
+      self.pop_scope()
+      
+      self.expect_realtype(realtype, realdata.realtype, var_decl_node.expr.pos)
+      sym.realtype = realtype
+
+      if sym.is_comptime:
+        self.expect_realdata_is_comptime_value(realdata, var_decl_node.expr.pos)
+
+        if not realtype.can_be_handled_by_a_constant():
+          error('a local constant cannot handle this type', var_decl_node.pos)
+        
+        sym.realdata = realdata
+        continue
+
+      glob = ll.GlobalVariable(
+        self.output,
+        llvmtype := self.convert_realtype_to_llvmtype(realtype),
+        self.fixname_for_llvm(sym_id)
+      )
+
+      glob.initializer = ll.Constant(llvmtype, ll.Undefined)
+      sym.llvm_data = glob
+
+      llvmbuilder_entry.store(realdata.llvm_data, glob)
+
+    self.pop_scope()
+    self.pop_builder()
+
+    self.fn_in_evaluation.remove_by_key(fn_key)
+
+    llvmbuilder_allocas.branch(llvmbuilder_entry.block)
+    llvmbuilder_entry.ret_void()
+
+    return self.setupper_llvmfn
 
   def fixname_for_llvm(self, name):
     return f'{self.path}::{name}'
@@ -2576,13 +2823,21 @@ def check_main_proto(main_proto, main_pos):
 def get_intrinsic_trail_llvmtype():
   return get_llvmtype_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'Trail')
 
+def emit_modules_setupper_calls(llvm_fn):
+  modules_setup = ll.IRBuilder(llvm_fn.append_basic_block('modules_setup'))
+
+  for setupper_llvm_fn in utils.modules_setupper_llvm_fns:
+    modules_setup.call(setupper_llvm_fn, [])
+  
+  return llvm_fn
+
 def gen_llvm_main(llvm_internal_main, g, main_fn_node_pos=None):
   if llvm_internal_main is None:
-    return ll.Function(
+    return emit_modules_setupper_calls(ll.Function(
       g.output,
       ll.FunctionType(ll.IntType(32), []),
       ENTRY_FN_IDENTIFIER
-    )
+    ))
 
   llvm_main = ll.Function(g.output,
     ll.FunctionType(
@@ -2595,11 +2850,13 @@ def gen_llvm_main(llvm_internal_main, g, main_fn_node_pos=None):
     ENTRY_FN_IDENTIFIER
   )
 
+  llvm_main = emit_modules_setupper_calls(llvm_main)
   allocas = ll.IRBuilder(llvm_main.append_basic_block('allocas'))
   entry = ll.IRBuilder(llvm_main.append_basic_block('entry'))
 
-  emit_setup_trace(entry)
-  trail_info = f'  calling `main` at {repr_pos(main_fn_node_pos, use_path=True)}'
+  ll.IRBuilder(llvm_main.entry_basic_block).branch(allocas.basic_block)
+
+  trail_info = f'  running `{MAIN_FN_IDENTIFIER}` at {repr_pos(main_fn_node_pos, use_path=True)}'
   entry.ret(
     g.llvm_call(entry, llvm_internal_main, [llvm_main.args[0], llvm_main.args[1]], (allocas, trail_info))
   )
@@ -2635,7 +2892,7 @@ def get_llvm_global_variable_from_intrinsicmod(intrinsic_module_path, var_name):
   intrinsicmod_g = utils.cache[intrinsic_module_path]
   varsym = intrinsicmod_g.base_map.get_symbol(var_name, None)
 
-  intrinsicmod_g.evaluate_global_sym(varsym)
+  # intrinsicmod_g.evaluate_global_sym(varsym)
 
   return varsym.llvm_data
 
@@ -2678,13 +2935,6 @@ def emit_pop_trail(llvm_builder):
   trace_pop_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'trace_pop')
   llvm_builder.call(trace_pop_llvm_fn, [])
 
-def emit_setup_trace(llvm_builder):
-  if is_release_build():
-    return
-
-  trace_setup_llvm_fn = get_llvm_fn_from_intrinsicmod(INTRINSICMOD_TRACE_ZPP, 'setup_trace')
-  llvm_builder.call(trace_setup_llvm_fn, [])
-
 def gen_tests(g):
   test_identifiers_and_llvm_fns = {}
 
@@ -2710,11 +2960,11 @@ def gen_tests(g):
   
   llvm_main = gen_llvm_main(None, g)
   llvm_allocas = ll.IRBuilder(llvm_main.append_basic_block('allocas'))
+  ll.IRBuilder(llvm_main.entry_basic_block).branch(llvm_allocas.basic_block)
+
   first_entry = llvm_builder = ll.IRBuilder(llvm_main.append_basic_block('entry'))
   llvm_puts = g.cache_lib_fn('puts', RealType('i32_rt'), [CSTRING_REALTYPE])
   llvm_cstring = ll.PointerType(ll.IntType(8))
-
-  emit_setup_trace(llvm_builder)
 
   for test_id, (test_node, llvm_fn_test) in test_identifiers_and_llvm_fns.items():
     failurebr = ll.IRBuilder(llvm_main.append_basic_block('failure_branch'))

@@ -89,4 +89,11 @@ def mapast_imports(import_nodes, srcpath):
     
     toks = lex(src, path)
     ast = parse(toks)
-    _ = cache_mapast(path, ast)
+    g = cache_mapast(path, ast)
+
+    gen_and_cache_module_setupper(g)
+
+def gen_and_cache_module_setupper(g):
+  utils.modules_setupper_llvm_fns.append(
+    g.gen_module_setuper_fn()
+  )

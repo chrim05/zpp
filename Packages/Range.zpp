@@ -1,0 +1,14 @@
+type Range[T] = (start: T, stop: T)
+
+-- this is a shortcut for `(start: .., stop: ..)`
+fn range(|T| start: T, stop: T) -> Range[T]:
+  return (start: start, stop: stop)
+
+fn in_range_inclusive(|T| value: T, r: Range[T]) -> u8:
+  return value >= r.start and value <= r.stop
+
+fn in_range_exclusive(|T| value: T, r: Range[T]) -> u8:
+  return value > r.start and value < r.stop
+
+fn in_range(|T| value: T, r: Range[T]) -> u8:
+  return value >= r.start and value < r.stop

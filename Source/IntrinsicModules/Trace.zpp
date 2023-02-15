@@ -20,13 +20,7 @@ type Trace = (last_node: *Trail, len: u16)
 
 MaximumRecursionDepth: u16 = 1'000
 
-trace: Trace = Undefined
-
--- an implicit call to this function is emitted
--- by the compiler in the main to make the trace
--- to work correctly
-fn setup_trace() -> void:
-  trace.len = 0
+trace: Trace = (last_node: None, len: 0)
 
 -- prints the call trace
 fn print_trace() -> void:
@@ -35,10 +29,10 @@ fn print_trace() -> void:
   -- with calls informations, anyway
   -- the below call to puts is ugly
   -- to see alone, so i prefer avoiding this
-  if IsReleaseBuild!():
+  if is_release_build!():
     return
 
-  .. = InternalCall!(|*u8, i32| 'puts', Cstr!('Trace (first is the most recent):'))
+  .. = internal_call!(|*u8, i32| 'puts', cstr!('Trace (first is the most recent):'))
 
   -- if we want to avoid crash or ub we need to skip the last element
   -- when the print_trace is due to max recursion (when we have max recursion error
@@ -50,13 +44,13 @@ fn print_trace() -> void:
   -- the last trail (the most recent)
   current_trail: *Trail = trace.last_node
   for i: u16 = skip_one_or_zero, i < trace.len, i += 1:
-    .. = InternalCall!(|*u8, i32| 'puts', current_trail.*.info)
+    .. = internal_call!(|*u8, i32| 'puts', current_trail.*.info)
     -- moving to the previous trail
     -- (we are iterating backwards)
     current_trail = current_trail.*.prev_node
   
   -- printing visual separator (`puts` also print a `\n`)
-  .. = InternalCall!(|*u8, i32| 'puts', Cstr!(''))
+  .. = internal_call!(|*u8, i32| 'puts', cstr!(''))
 
 fn trace_push(trail: *Trail) -> void:
   -- read below to understand why there are two
@@ -83,7 +77,7 @@ fn trace_push(trail: *Trail) -> void:
     -- greater than (and no longer equal) to `MaximumRecursionDepth`.
     -- the `if` above this in which i am writing takes care of breaking the infinite loop
     -- when `trace.len` is greater than MaximumRecursionDepth
-    Panic!('maximum recursion depth exceeded')
+    panic!('maximum recursion depth exceeded')
   
   -- i replace the last trail of the trace
   -- with a new trail (statically allocated on the stack by the caller)

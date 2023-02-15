@@ -1,0 +1,94 @@
+from 'Range.zpp'  import [ range, in_range_inclusive ]
+from 'Array.zpp'  import [ nth, clone -> clone_array ]
+from 'Memory.zpp' import [ malloc_collection, box ]
+from 'Math.zpp'   import [ abs, is_neg ]
+from 'Ascii.zpp'  import [ lowercase_letters_digits ]
+from 'String.zpp' import [ String ]
+
+fn count_digits(|T| n: T, base: T) -> u64:
+  count: u64 = 1
+  for .., n >= base, n = n / base:
+    count += 1
+  
+  return count
+
+-- tipo i generics
+-- no è un compilatore completo solo che ora è in stage0 ed è scritto in python
+-- comunque guarda che ho fatto
+-- (tutto nativo)
+fn repr_digit(|T| n: T, base: T) -> u8:
+  assert!(n.in_range_inclusive(range(0, base - 1)))
+  assert!(base.cast(u64).in_range_inclusive(range(0, lowercase_letters_digits.len - 1)))
+
+  -- * this only worked with base in 0..<10
+  -- return `0` + n.cast(u8)
+
+  return lowercase_letters_digits.ref.nth((n % base).cast(u64))
+
+-- ? [Remember: drop the result]
+fn repr_pointer(|T| p: *T) -> String:
+  if p == None:
+    return 'None'.ref.clone_array()
+  
+  n: u64 = p.ptr2int!()
+  count: u64 = n.count_digits(16)
+  offset: u64 = 2
+  len: u64 = count + offset
+  ptr: *mut u8 = malloc_collection(len)
+
+  ptr[0] = `0`
+  ptr[1] = `x`
+  
+  return n.internal_repr_int_into_buffer(16, len, ptr, offset)
+
+-- ? [Danger: don't drop the result]
+fn repr_bool(n: u8) -> String:
+  return 'True' if n else 'False'
+
+-- ? [Remember: drop the result]
+-- todo -> add support for repr config
+-- todo    (for example: repr_sign: True/False)
+fn repr_int(|T| n: T, base: T) -> String:
+  n_is_neg: u64 = n.is_neg().cast(u64)
+  n = n.abs()
+  count: u64 = n.count_digits(base)
+
+  len: u64 = count + n_is_neg
+  ptr: *mut u8 = malloc_collection(len)
+
+  if n_is_neg:
+    ptr[0] = `-`
+  
+  return n.internal_repr_int_into_buffer(base, len, ptr, n_is_neg)
+
+fn internal_repr_int_into_buffer(|T|
+  n: T,
+  base: T,
+  whole_buffer_len: u64,
+  buffer: *mut u8,
+  limit: u64
+) -> String:
+  -- basically
+  -- for each digit (
+  --   excluding the first whenever it's the minus sign
+  -- )
+  --
+  -- the cycle breaks when the buffer index
+  -- touches the limit (
+  --   default is 0,
+  --   when `n` is negative it's 1,
+  --   because we need to reserve the first slot
+  --   for the minus sign character
+  -- )
+  for i: u64 = whole_buffer_len, i != limit, n = n / base:
+    -- update the buffer index
+    i -= 1
+    -- extract the last digit
+    digit: T = n % base
+    -- and write it to the buffer
+    buffer[i] = digit.repr_digit(base)
+  
+  return (ptr: buffer, len: whole_buffer_len)
+
+fn repr_char(c: u8) -> String:
+  return (ptr: c.box(), len: 1)

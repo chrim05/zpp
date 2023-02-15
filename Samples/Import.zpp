@@ -1,23 +1,23 @@
 from 'HelperModules/ModuleToImport.zpp'  import *
-from 'HelperModules/ModuleToImportA.zpp' import [ GetModuleName -> GetA ]
-from 'HelperModules/ModuleToImportB.zpp' import [ GetModuleName -> GetB ]
+from 'HelperModules/ModuleToImportA.zpp' import [ get_module_name -> get_a ]
+from 'HelperModules/ModuleToImportB.zpp' import [ get_module_name -> get_b ]
 
 -- this function will be used by
 -- `module_to_import.zpp` to test
 -- recursive imports
-fn Add(a: i64, b: i64) -> i64:
+fn add(a: i64, b: i64) -> i64:
   return a + b
 
 test 'import':
   a: Point = (x: 4, y: 20)
   b: Point = (x: 6, y: 9)
 
-  c: Point = PointAdd(a.&, b.&)
+  c: Point = point_add(ref a, ref b)
 
-  return Ok if c.x + c.y == 39 else Err
+  return .Ok if c.x + c.y == 39 else .Err
 
 test 'importing functions with the same name, but different alias':
-  x: *u8 = GetA()
-  y: *u8 = GetB()
+  x: *u8 = get_a()
+  y: *u8 = get_b()
 
-  return Ok if x[17] == `a` and y[17] == `b` else Err
+  return .Ok if x[14] == `A` and y[14] == `B` else .Err

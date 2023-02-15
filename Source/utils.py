@@ -1,5 +1,6 @@
 from os import getcwd
 from os.path import abspath
+from posixpath import relpath
 from sys import argv
 
 from llvmlite.ir import Module
@@ -8,6 +9,7 @@ def setup_globals():
   global cache, output, libs_to_import
   global llvm_internal_functions_cache, strings_cache
   global llvm_internal_vars_cache, intrinsic_modules
+  global enums_cache, enums_count, modules_setupper_llvm_fns
 
   cache = {}
   output = Module()
@@ -15,10 +17,13 @@ def setup_globals():
   llvm_internal_functions_cache = {}
   strings_cache = {}
   llvm_internal_vars_cache = {}
+  enums_cache = { 'Ok': 0, 'Err': 1 }
+  enums_count = 0
+  modules_setupper_llvm_fns = []
 
   from lex import lex
   from parse import parse
-  from mapast import cache_mapast
+  from mapast import cache_mapast, gen_and_cache_module_setupper
 
   for m in intrinsic_modules:
     with open(m) as f:
@@ -26,7 +31,9 @@ def setup_globals():
 
     toks = lex(src, m)
     ast = parse(toks)
-    _ = cache_mapast(m, ast)
+    g = cache_mapast(m, ast)
+    
+    gen_and_cache_module_setupper(g)
 
 def error(msg, pos):
   if pos is None:
@@ -96,7 +103,7 @@ def repr_pos(pos, use_path=False):
   r = f'[line: {line}, col: {col}]'
 
   if use_path:
-    r = f"'{path}' {r}"
+    r = f"'{relpath(path)}' {r}"
 
   return r
 
@@ -160,4 +167,5 @@ def get_full_path_from_brother_file(brother_filepath, filepath):
   return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)
 
 INTRINSICMOD_TRACE_ZPP = get_full_path_from_brother_file(__file__, 'IntrinsicModules/Trace.zpp')
-intrinsic_modules = [INTRINSICMOD_TRACE_ZPP]
+INTRINSICMOD_IO_ZPP = get_full_path_from_brother_file(__file__, '../Packages/Io.zpp')
+intrinsic_modules = [INTRINSICMOD_TRACE_ZPP, INTRINSICMOD_IO_ZPP]

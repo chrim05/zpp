@@ -1,0 +1,32 @@
+from 'Libc.zpp' import [
+  malloc -> cmalloc,
+  free -> cfree,
+  memcopy -> cmemcopy
+]
+
+fn calculate_collection_buffer_size(|T| length: u64) -> u64:
+  return type_size!(|T|) * length
+
+fn malloc_collection(|T| length: u64) -> *mut T:
+  return cast(*mut T) cmalloc(
+    length.calculate_collection_buffer_size(|T|)
+  )
+
+fn free_collection(|T| self: *mut T) -> void:
+  cfree(cast(*mut u8) self)
+
+fn copy_collection_to(|T| source: *T, target: *mut T, length: u64) -> void:
+  cmemcopy(
+    cast(*u8) source,
+    cast(*mut u8) target,
+    length.calculate_collection_buffer_size(|T|)
+  )
+
+fn box(|T| initializer: T) -> *mut T:
+  ptr: *mut T = malloc_collection(|T| 1)
+  initializer.ref.copy_collection_to(ptr, 1)
+
+  return ptr
+
+fn drop(|T| ptr: *mut T) -> void:
+  ptr.free_collection()

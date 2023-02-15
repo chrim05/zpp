@@ -1,0 +1,294 @@
+from 'Repr.zpp'   import [ repr_int, repr_bool, repr_pointer, repr_char ]
+from 'Memory.zpp' import [ malloc_collection, copy_collection_to ]
+from 'String.zpp' import [ String, has_char_at_index ]
+from 'Libc.zpp'   import [ strlen -> cstrlen ]
+from 'Ascii.zpp'  import [ is_alphanum ]
+from 'Array.zpp'  import [ nth, eq ]
+from 'List.zpp'   import [
+  List,
+  create -> create_list,
+  drop   -> drop_list,
+  nth    -> nth_list,
+  last_ref_mut,
+  append,
+  to_array
+]
+
+-- this type is responsible for representing different kinds of format
+-- examples: {s} {i32} etc ...
+type FormatterTag = u8
+-- args are contiguous in memory
+type FormatterArgs = *u8
+-- class for formatting strings
+type StringFormatter = (
+  index: u64,
+  buffers: List[List[u8]],
+  to_drops: List[u8],
+  fmt: *String,
+  args: FormatterArgs
+)
+
+fn create(fmt: *String, args: FormatterArgs) -> StringFormatter:
+  return (
+    index: 0,
+    buffers: create_list(32),
+    to_drops: create_list(32),
+    fmt: fmt,
+    args: args
+  )
+
+fn drop(self: *mut StringFormatter) -> void:
+  self.*.buffers.mut.drop_list()
+  self.*.to_drops.mut.drop_list()
+
+fn front_char(self: *StringFormatter) -> u8:
+  return self.*.fmt.nth(self.*.index + 1)
+
+fn current_char(self: *StringFormatter) -> u8:
+  return self.*.fmt.nth(self.*.index)
+
+fn has_current_char(self: *StringFormatter) -> u8:
+  return self.*.fmt.has_char_at_index(self.*.index)
+
+fn has_next_char(self: *StringFormatter) -> u8:
+  return self.*.fmt.has_char_at_index(self.*.index + 1)
+
+fn advance(self: *mut StringFormatter) -> void:
+  self.*.index += 1
+
+fn get_whole_length(self: *StringFormatter) -> u64:
+  len: u64 = 0
+
+  for i: u64 = 0, i < self.*.buffers.len, i += 1:
+    len += self.*.buffers.ref.nth_list(i).len
+  
+  return len
+
+fn build_result_and_drop(self: *StringFormatter) -> String:
+  whole_len: u64 = self.get_whole_length()
+  ptr: *mut u8 = malloc_collection(|u8| whole_len)
+  it: *mut u8 = ptr
+
+  for i: u64 = 0, i < self.*.buffers.len, i += 1:
+    buffer: List[u8] = self.*.buffers.ref.nth_list(i)
+    has_to_be_dropped: u8 = self.*.to_drops.ref.nth_list(i)
+    defer:
+      if has_to_be_dropped:
+        buffer.mut.drop_list()
+
+    copy_collection_to(buffer.ptr, it, buffer.len)
+    it = int2ptr!(it.ptr2int!() + buffer.len * type_size!(|u8|))
+  
+  return (ptr: ptr, len: whole_len)
+
+-- ? [FailsWhen: the string ends without closing `}`]
+-- Collects a word until `}` into a String buffer
+fn collect_word(self: *mut StringFormatter, output: *mut String) -> Result:
+  -- setting up the string slice ref
+  output.*.ptr = int2ptr!(self.*.fmt.*.ptr.ptr2int!() + self.*.index)
+  output.*.len = 0
+
+  -- updating the string slice ref
+  while True:
+    if not self.has_current_char():
+      return .MalformedFormatStringError
+
+    c: u8 = self.current_char()
+
+    if c == `}`:
+      break
+
+    if not c.is_alphanum():
+      return .BadCharacterInFormatterTagError
+
+    output.*.len += 1
+    -- moving to the next word's char
+    self.advance()
+
+  return .Ok
+
+string2tag_table: [13 x (w: String, t: FormatterTag)] = [
+  (w: 's', t: .FTagString),
+  (w: 'c', t: .FTagChar),
+  (w: '0', t: .FTagCstring),
+  (w: 'p', t: .FTagPointer),
+  (w: 'b', t: .FTagBool),
+  
+  (w: 'i8',  t: .FTagInt8),
+  (w: 'i16', t: .FTagInt16),
+  (w: 'i32', t: .FTagInt32),
+  (w: 'i64', t: .FTagInt64),
+
+  (w: 'u8',  t: .FTagUInt8),
+  (w: 'u16', t: .FTagUInt16),
+  (w: 'u32', t: .FTagUInt32),
+  (w: 'u64', t: .FTagUInt64)
+]
+
+-- ? [FailsWhen: the string ends without closing `}`]
+-- ? [FailsWhen: the formatter tag is unknown]
+-- Collects a word until `}` and converts it into a formatter tag
+fn collect_tag(self: *mut StringFormatter, tag: *mut FormatterTag) -> Result:
+  try self.collect_word(out word: String)
+
+  if word.len == 0:
+    return .EmptyFormatterTagError
+
+  for i: u8 = 0, i < string2tag_table.len, i += 1:
+    if word.ref.eq(ref string2tag_table[i].w):
+      *tag = string2tag_table[i].t
+      return .Ok
+      
+  return .UnknownFormatterTagError
+
+fn fetch_arg(|T| self: *mut StringFormatter) -> T:
+  arg: T = *cast(*T) self.*.args
+  self.*.args = int2ptr!(ptr2int!(self.*.args) + type_size!(|T|))
+
+  return arg
+
+fn process_int_tag(|IntType| self: *mut StringFormatter, buffer: *mut String, to_drop: *mut u8) -> void:
+  *buffer = self.fetch_arg(|IntType|).repr_int(10)
+  *to_drop = True
+
+fn process_tag(self: *mut StringFormatter, tag: FormatterTag) -> Result:
+  buffer: String = Undefined
+  to_drop: u8 = False
+
+  match tag:
+    case .FTagString:
+      buffer = self.fetch_arg()
+    
+    case .FTagChar:
+      buffer = self.fetch_arg(|u8|).repr_char()
+
+    case .FTagCstring:
+      buffer.ptr = self.fetch_arg()
+      buffer.len = buffer.ptr.cstrlen()
+    
+    case .FTagBool:
+      buffer = self.fetch_arg().repr_bool()
+
+    case .FTagPointer:
+      buffer = self.fetch_arg(|*u8|).repr_pointer()
+      to_drop = True
+    
+    case .FTagInt8:
+      self.process_int_tag(|i8| mut buffer, mut to_drop)
+    
+    case .FTagInt16:
+      self.process_int_tag(|i16| mut buffer, mut to_drop)
+    
+    case .FTagInt32:
+      self.process_int_tag(|i32| mut buffer, mut to_drop)
+    
+    case .FTagInt64:
+      self.process_int_tag(|i64| mut buffer, mut to_drop)
+    
+    case .FTagUInt8:
+      self.process_int_tag(|u8| mut buffer, mut to_drop)
+
+    case .FTagUInt16:
+      self.process_int_tag(|u16| mut buffer, mut to_drop)
+
+    case .FTagUInt32:
+      self.process_int_tag(|u32| mut buffer, mut to_drop)
+
+    case .FTagUInt64:
+      self.process_int_tag(|u64| mut buffer, mut to_drop)
+
+    else:
+      return .UnknownFormatterTagError
+  
+  -- appending the formatted buffer to the
+  -- buffers list
+  self.append_buffer((
+      ptr: buffer.ptr.cast(*mut u8),
+      len: buffer.len,
+      cap: buffer.len
+    ),
+    to_drop
+  )
+
+  return .Ok
+
+fn append_buffer(self: *mut StringFormatter, buffer: List[u8], has_to_be_dropped: u8) -> void:
+  self.*.buffers.mut.append(buffer)
+  self.*.to_drops.mut.append(has_to_be_dropped)
+
+fn append_to_last_buffer(self: *mut StringFormatter, c: u8) -> void:
+  self.*.buffers.ref.last_ref_mut().append(c)
+
+-- ? [Remember: drop the result]
+-- * `output` must be set to `Undefined`
+-- Writes the processed formatting stuff into the fixed buffer `output`
+-- This is the entry point for `StringFormatter` class
+fn process(self: *mut StringFormatter, output: *mut String) -> Result:
+  -- appending the first buffer
+  self.append_buffer(create_list(64), True)
+
+  -- iterating through all characters of formatter string
+  for .., self.*.index < self.*.fmt.*.len, self.advance():
+    c: u8 = self.current_char()
+
+    match c:
+      case `{`:
+        if self.has_next_char() and self.front_char() == `{`:
+          self.append_to_last_buffer(c)
+          self.advance()
+          continue
+      
+      case `}`:
+        if not self.has_next_char() or self.front_char() != `}`:
+          return .MalformedFormatStringError
+        
+        -- skipping the second `}`
+        self.advance()
+        
+        -- otherwise append the character to the buffer
+        self.append_to_last_buffer(c)
+        continue
+      
+      else:
+        -- appending any other character to the buffer
+        self.append_to_last_buffer(c)
+        continue
+    
+    -- skipping the word opener `{`
+    self.advance()
+    
+    try self.collect_tag(out tag: FormatterTag)
+    try self.process_tag(tag)
+
+    -- appending the next buffer
+    self.append_buffer(create_list(64), True)
+  
+  -- finilizing into the output buffer
+  *output = self.build_result_and_drop()
+  return .Ok
+
+-- ? [Remember: drop the result]
+-- Returns a fixed buffer containing the processed
+-- formatting stuff
+fn format(fmt: *String, args: FormatterArgs) -> String:
+  formatter: StringFormatter = create(fmt, args)
+  defer formatter.mut.drop()
+
+  try e: Result = formatter.mut.process(out result: String):
+    match e:
+      case .MalformedFormatStringError:
+        panic!('Malformed format string')
+      
+      case .UnknownFormatterTagError:
+        panic!('Unknown formatter tag')
+      
+      case .EmptyFormatterTagError:
+        panic!('Empty formatter tag')
+      
+      case .BadCharacterInFormatterTagError:
+        panic!('Bad character in formatter tag')
+      
+      else:
+        panic!('Unimplemented error')
+  
+  return result

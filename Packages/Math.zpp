@@ -1,0 +1,5 @@
+fn abs(|T| n: T) -> T:
+  return n if n >= 0 else -n
+
+fn is_neg(|T| n: T) -> u8:
+  return n < 0

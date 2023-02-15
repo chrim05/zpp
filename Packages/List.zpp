@@ -1,0 +1,80 @@
+from 'Array.zpp'  import [ Array ]
+from 'Memory.zpp' import [
+  malloc_collection,
+  free_collection,
+  copy_collection_to
+]
+
+-- a dynamic collection
+type List[T] = (ptr: *mut T, len: u64, cap: u64)
+
+fn create(|T| starting_capacity: u64) -> List[T]:
+  return (
+    ptr: malloc_collection(|T| starting_capacity),
+    len: 0,
+    cap: starting_capacity
+  )
+
+fn drop(|T| self: *mut List[T]) -> void:
+  free_collection(self.*.ptr)
+
+  self.*.len = 0
+  self.*.cap = 0
+  self.*.ptr = None
+
+fn ensure_has_enough_space_for_another_element(|T| self: *mut List[T]) -> void:
+  target_len: u64 = self.*.len + type_size!(|T|)
+
+  if self.*.cap >= target_len:
+    return
+
+  self.resize_to(target_len * 2)
+
+fn resize_to(|T| self: *mut List[T], new_capacity: u64) -> void:
+  assert!(new_capacity > self.*.cap, 'Expected a capacity bigger than the actual one')
+
+  -- allocating a new buffer of `new_capacity` bytes
+  updated_allocation: *mut T = malloc_collection(|T| new_capacity)
+
+  -- copying the old content into it and dropping the old buffer
+  copy_collection_to(self.*.ptr, updated_allocation, self.*.len)
+  free_collection(self.*.ptr)
+
+  -- reconstructing `self`
+  self.*.cap = new_capacity
+  self.*.ptr = updated_allocation
+
+fn append(|T| self: *mut List[T], elem: T) -> void:
+  self.ensure_has_enough_space_for_another_element()
+
+  -- writing the elem into the buffer and updating its length
+  self.*.ptr[self.*.len] = elem
+  self.*.len += 1
+
+fn to_array(|T| self: *List[T]) -> Array[T]:
+  return (ptr: self.*.ptr, len: self.*.len)
+
+fn is_empty(|T| self: *List[T]) -> u8:
+  return self.*.len == 0
+
+fn nth_ref_mut(|T| self: *List[T], i: u64) -> *mut T:
+  assert!(i < self.*.len, 'Index out of bounds')
+
+  return mut self.*.ptr[i]
+
+fn nth_ref(|T| self: *List[T], i: u64) -> *T:
+  return self.nth_ref_mut(i)
+
+fn nth(|T| self: *List[T], i: u64) -> T:
+  return *self.nth_ref(i)
+
+fn last(|T| self: *List[T]) -> T:
+  return *self.last_ref()
+
+fn last_ref(|T| self: *List[T]) -> *T:
+  return self.last_ref_mut()
+
+fn last_ref_mut(|T| self: *List[T]) -> *mut T:
+  assert!(not self.is_empty(), 'An empty list has no last element')
+  
+  return self.nth_ref_mut(self.*.len - 1)

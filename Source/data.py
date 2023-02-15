@@ -54,10 +54,18 @@ class Node:
         return f'return{f" {self.expr}" if self.expr is not None else ""}'
 
       case 'bin_node':
-        return f'({self.left} {self.op.kind} {self.right})'
+        return f'{self.left} {self.op.kind} {self.right}'
       
       case 'unary_node':
-        return f'({self.op.kind} {self.expr})'
+        match self.op.kind:
+          case '&':
+            return f'{self.expr}.&'
+
+          case '*':
+            return f'{self.expr}.*'
+
+          case _:
+            return f'{self.op.kind}{self.expr}'
 
       case 'ptr_type_node':
         return f'*{self.type}'
@@ -66,7 +74,7 @@ class Node:
         return f'type {self.name}{self.generics} = {self.type}'
 
       case 'call_node':
-        return f'<call `{self.name.value}`, {self.args}>'
+        return f'{self.name.value}{"!" if self.is_internal_call else ""}({", ".join(map(repr, self.args))})'
       
       case 'var_decl_node':
         return f'<var `{self.name.value}`: {self.type} = {self.expr}>'
@@ -96,7 +104,7 @@ class Node:
         return f'{self.name.value}: {self.type}'
       
       case 'as_node':
-        return f'<as_node from {self.expr}, to {self.type}>'
+        return f'{self.expr}.cast({self.type})'
       
       case 'while_node':
         return f'while {self.cond}{repr_block(self.body)}'
@@ -156,9 +164,15 @@ class Node:
       
       case 'fn_type_node':
         return f'fn({", ".join(self.arg_types)}) -> {self.ret_type}'
+      
+      case 'enum_node':
+        return f'.{self.id}'
 
       case _:
-        return str(self.value)
+        try:
+          return str(self.value)
+        except AttributeError:
+          raise NotImplementedError(self.kind)
 
 class MappedAst:
   def __init__(self):
@@ -236,6 +250,9 @@ class RealType:
     assert self.is_numeric()
 
     return self.kind[0] == 'i'
+  
+  def can_be_handled_by_a_constant(self):
+    return self.is_numeric() or self.is_ptr()
   
   def is_int(self):
     return self.kind in ['i8_rt', 'i16_rt', 'i32_rt', 'i64_rt', 'u8_rt', 'u16_rt', 'u32_rt', 'u64_rt']
@@ -339,15 +356,24 @@ class RealType:
       
       match self.kind:
         case 'ptr_rt':
+          if 'generic_to_infer_rt' in [self.type.kind, obj.type.kind]:
+            return True
+
           return self.is_mut == obj.is_mut and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
         
         case 'static_array_rt':
+          if 'generic_to_infer_rt' in [self.type.kind, obj.type.kind]:
+            return True
+
           return self.length == obj.length and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
 
         case _:
           return equal_dicts(self.__dict__, obj.__dict__, ['aka'])
     
     if self.kind != obj.kind:
+      return False
+
+    if len(self.fields) != len(obj.fields):
       return False
 
     for (name1, rt1), (name2, rt2) in zip(self.fields.items(), obj.fields.items()):
@@ -417,6 +443,11 @@ class RealData:
   
   def is_comptime_value(self):
     return hasattr(self, 'value')
+  
+  def is_true(self):
+    assert self.is_comptime_value()
+
+    return self.value == 1
   
   def realtype_is_coercable(self):
     return self.is_comptime_value() and not hasattr(self, 'realtype_is_coerced')

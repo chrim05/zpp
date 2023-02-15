@@ -1,0 +1,7 @@
+from '../Packages/Io.zpp' import [ printf ]
+
+fn main(argc: u32, argv: **u8) -> Result:
+  for i: u32 = 1, i < argc, i += 1:
+    try printf('the {u32}nth arg: "{0}"\n', args!(i, argv[i]))
+
+  return .Ok

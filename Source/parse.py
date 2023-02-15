@@ -1,17 +1,22 @@
 from data import Node
 from utils import error
 
-ALLOWED_ON_DEFER_NODE = [
-  'pass_node', 'if_node', 'return_node', 'while_node',
-  'break_node', 'continue_node', 'for_node', 'defer_node',
-  'var_decl_node'
+UNALLOWED_ON_BLOCK_DEFER_NODE = [
+  'return_node', 'break_node',
+  'continue_node', 'defer_node'
 ]
+
+UNALLOWED_ON_INLINE_DEFER_NODE = [
+  'pass_node', 'if_node', 'while_node',
+  'for_node', 'var_decl_node'
+] + UNALLOWED_ON_BLOCK_DEFER_NODE
 
 class Parser:
   def __init__(self, toks):
     self.toks = toks
     self.index = 0
     self.indents = [0]
+    self.stmt_parser_fn = self.parse_stmt
   
   @property
   def eof_pos(self):
@@ -321,7 +326,7 @@ class Parser:
     
     return r
   
-  def parses_array_init_node(self, pos):
+  def parse_array_init_node(self, pos):
     nodes = []
 
     while True:
@@ -346,21 +351,29 @@ class Parser:
     match term.kind:
       case 'num' | 'fnum' | 'id' | 'True' | 'False' | 'None' | 'Undefined' | 'Ok' | 'Err' | 'str' | 'chr':
         pass
+      
+      case '.':
+        term = Node('enum_node', id=self.expect_and_consume('id'), pos=term.pos)
     
       case '[':
         if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
           term = self.parse_struct_init_node(term.pos, is_union_node=True)
         else:
-          term = self.parses_array_init_node(term.pos)
+          term = self.parse_array_init_node(term.pos)
+      
+      case 'cast':
+        term = self.parse_cast_node(None, term.pos)
     
-      case '+' | '-' | 'not':
+      case '+' | '-' | 'not' | 'ref' | 'mut' | '*':
         op = term
+        is_mut = op.kind == 'mut'
         expr = self.parse_term()
 
         term = self.make_node(
           'unary_node',
           op=op,
           expr=expr,
+          is_mut=is_mut,
           pos=op.pos
         )
       
@@ -374,7 +387,7 @@ class Parser:
       case _:
         error('invalid term in expression', term.pos)
     
-    while self.match_toks(['.', '[', '(', '!'], allow_on_new_line=True):
+    while self.has_tok and not self.cur.is_on_new_line and self.match_toks(['.', '[', '(', '!'], allow_on_new_line=True):
       if self.cur.kind == '[':
         pos = self.consume_cur().pos
         term = self.make_node('index_node', instance_expr=term, index_expr=self.parse_expr(), pos=pos)
@@ -393,12 +406,12 @@ class Parser:
       dot_tok = self.consume_cur()
       left_expr = term
 
-      if dot_tok.kind == '.' and self.match_toks(['&', '*', 'cast']):
+      if dot_tok.kind == '.' and self.match_toks(['mut', 'ref', '*', 'cast']):
         op = self.consume_cur()
-        is_mut = op.kind == '&' and self.consume_tok_if_match('mut') is not None
+        is_mut = op.kind == 'mut'
 
         if op.kind == 'cast':
-          term = self.parse_cast_node(term, op)
+          term = self.parse_cast_node(term, op.pos)
         else:
           term = self.make_node(
             'unary_node',
@@ -408,6 +421,7 @@ class Parser:
             pos=dot_tok.pos
           )
         
+        term.is_chained_form = True
         continue
       
       right_expr = self.expect_and_consume('id')
@@ -419,14 +433,18 @@ class Parser:
         pos=dot_tok.pos
       )
     
+    if term.kind == 'unary_node' and hasattr(term, 'is_chained_form') and term.is_chained_form:
+      error(f'please use `{term.op.value} expr` instead, `expr.{term.op.value}` is reserved for chaining', term.pos)
+    
     return term
   
-  def parse_cast_node(self, term_node, op):
-    pos = op.pos
-    
+  def parse_cast_node(self, term_node, pos):
     self.expect_and_consume('(')
     type_node = self.parse_type()
     self.expect_and_consume(')')
+
+    if term_node is None:
+      term_node = self.parse_term()
 
     return self.make_node(
       'as_node',
@@ -605,7 +623,16 @@ class Parser:
       )
 
     pos = self.expect_and_consume('case', allow_on_new_line=True).pos
-    expr = self.parse_expr()
+    expr = []
+
+    while True:
+      expr.append(self.parse_expr(allow_left_on_new_line=True))
+
+      if not self.match_tok(','):
+        break
+
+      self.consume_cur()
+
     body = self.parse_block()
 
     return self.make_node(
@@ -661,17 +688,36 @@ class Parser:
       else_branch=else_branch,
       pos=pos
     )
+  
+  def parse_inline_stmt(self):
+    node = self.parse_stmt()
+
+    if node.kind in UNALLOWED_ON_INLINE_DEFER_NODE:
+      error('this statement is not allowed here', node.pos)
+    
+    return node
+
+  def parse_stmt_without_control_flow(self):
+    node = self.parse_stmt()
+
+    if node.kind in UNALLOWED_ON_BLOCK_DEFER_NODE:
+      error('this statement is not allowed here', node.pos)
+    
+    return node
 
   def parse_defer_node(self):
     pos = self.consume_cur().pos
-    node = self.parse_stmt()
 
-    if node.kind in ALLOWED_ON_DEFER_NODE:
-      error('statement not allowed when using defer', pos)
+    if self.match_tok(':'):
+      old, self.stmt_parser_fn = self.stmt_parser_fn, self.parse_stmt_without_control_flow
+      body = self.parse_block()
+      self.stmt_parser_fn = old
+    else:
+      body = [self.parse_inline_stmt()]
 
     return self.make_node(
       'defer_node',
-      node=node,
+      body=body,
       pos=pos
     )
 
@@ -748,7 +794,7 @@ class Parser:
       self.advance()
       right_node = None
     else:
-      right_node = self.parse_stmt()
+      right_node = self.parse_inline_stmt()
       
     body = self.parse_block()
 
@@ -823,7 +869,7 @@ class Parser:
     self.indents.append(self.cur.indent)
 
     while True:
-      block.append(self.parse_stmt())
+      block.append(self.stmt_parser_fn())
 
       if self.has_tok and not self.cur.is_on_new_line:
         error(f'unexpected token `{self.cur.kind}` at the end of a statement', self.cur.pos)
