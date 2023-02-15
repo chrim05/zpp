@@ -203,7 +203,7 @@ fn process_tag(self: *mut StringFormatter, tag: FormatterTag) -> Result:
   -- appending the formatted buffer to the
   -- buffers list
   self.append_buffer((
-      ptr: buffer.ptr.cast(*mut u8),
+      ptr: cast(*mut u8) buffer.ptr,
       len: buffer.len,
       cap: buffer.len
     ),

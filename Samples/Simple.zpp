@@ -1,7 +1,6 @@
 -- Todo (Done: -, Important: !, Normal: +, Proposal: ?, ToFix: *)
 -- - assert!() needs to call abort before unreachable llvm instruction
 -- - generics infer in calls [DONE, but it doesn't work that well because of the bad compiler structure]
--- ? u8!(), u16!(), .. instead of .cast(u8), .cast(u16), ..
 -- ! inspect!()
 -- + multiline strings
 -- + try to make `out param: T` inferrable

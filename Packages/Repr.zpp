@@ -21,9 +21,9 @@ fn repr_digit(|T| n: T, base: T) -> u8:
   assert!(base.cast(u64).in_range_inclusive(range(0, lowercase_letters_digits.len - 1)))
 
   -- * this only worked with base in 0..<10
-  -- return `0` + n.cast(u8)
+  -- return `0` + cast(u8)n
 
-  return lowercase_letters_digits.ref.nth((n % base).cast(u64))
+  return lowercase_letters_digits.ref.nth(cast(u64) (n % base))
 
 -- ? [Remember: drop the result]
 fn repr_pointer(|T| p: *T) -> String:
@@ -49,7 +49,7 @@ fn repr_bool(n: u8) -> String:
 -- todo -> add support for repr config
 -- todo    (for example: repr_sign: True/False)
 fn repr_int(|T| n: T, base: T) -> String:
-  n_is_neg: u64 = n.is_neg().cast(u64)
+  n_is_neg: u64 = cast(u64) n.is_neg()
   n = n.abs()
   count: u64 = n.count_digits(base)
 

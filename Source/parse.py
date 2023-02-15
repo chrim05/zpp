@@ -433,7 +433,7 @@ class Parser:
         pos=dot_tok.pos
       )
     
-    if term.kind == 'unary_node' and hasattr(term, 'is_chained_form') and term.is_chained_form:
+    if term.kind in ['unary_node', 'as_node'] and hasattr(term, 'is_chained_form') and term.is_chained_form:
       error(f'please use `{term.op.value} expr` instead, `expr.{term.op.value}` is reserved for chaining', term.pos)
     
     return term
@@ -448,6 +448,7 @@ class Parser:
 
     return self.make_node(
       'as_node',
+      op=Node('cast', value='cast', pos=pos),
       expr=term_node,
       type=type_node,
       pos=pos

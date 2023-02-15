@@ -46,7 +46,7 @@ test 'chr':
   x: u8 = `a`
   y: i32 = `b`
 
-  try expect!(y - x.cast(i32) == 1)
+  try expect!(y - cast(i32)x == 1)
 
 from '../Packages/Libc.zpp' import [ malloc, free ]
 
@@ -77,7 +77,7 @@ fn ifib(n: u16) -> u64:
 -- recursive fibonacci
 fn rfib(n: u16) -> u64:
   return \
-    n.cast(u64) \
+    cast(u64)n \
       if n <= 1 else \
         rfib(n - 1) + rfib(n - 2)
 
@@ -93,9 +93,9 @@ test 'forloop':
 
 test 'floating points + nested if':
   x: f32 = 1.2
-  y: i32 = (x + 0.8).cast(i32)
-  z: f64 = y.cast(f64) + 0.1
-  k: u64 = x.cast(u64) + z.cast(u64)
+  y: i32 = cast(i32) (x + 0.8)
+  z: f64 = cast(f64)y + 0.1
+  k: u64 = cast(u64)x + cast(u64)z
   r: u8 = k == 3
 
   if x == 1.2:
@@ -113,7 +113,7 @@ test 'generic function':
   a: u8 = 1.add(2)
   b: i32 = 3.add(4)
 
-  return expect!(a.cast(i32) + b + 1 == 11)
+  return expect!(cast(i32)a + b + 1 == 11)
 
 type Node[T] = (data: T, next: *Node[T])
 
@@ -176,7 +176,7 @@ test 'literals of any type':
   v: Vec3 = (x: 1, y: 2, z: 3)
   w: Vec3 = v
   a: [Size x i32] = [1, 2] -- static array
-  b: Array[i32] = (ptr: a.ref.cast(*i32), len: 2) -- sized array
+  b: Array[i32] = (ptr: cast(*i32) ref a, len: 2) -- sized array
   o: Array[i64] = ref [1, 2, 3]
   
   s = cstr!('goodbye')
@@ -204,8 +204,8 @@ test 'num and fnum literals':
   x: i32 = 1'000'000
   y: f32 = 1'000'000.2
   
-  try expect!(x + y.cast(i32) == 2'000'000)
-  try expect!(x.cast(f32) + y == 2'000'000.2)
+  try expect!(x + cast(i32)y == 2'000'000)
+  try expect!(cast(f32)x + y == 2'000'000.2)
 
 fn foo(x: i64) -> u8:
   return 12
@@ -295,7 +295,7 @@ test 'ptr array access2':
 test 'static array':
   a: [3 x i32] = [1, 2, 3]
   b: *[3 x i32] = ref a
-  c: *i32 = b.cast(*i32)
+  c: *i32 = cast(*i32) b
   
   try expect!(a[0] + b.*[1] + c[2] == 6)
 
@@ -315,7 +315,7 @@ fn hash_string(s: *String) -> u64:
   result: u64 = 0
 
   for i: u64 = 0, i < s.*.len, i += 1:
-    result += s.*.ptr[i].cast(u64)
+    result += cast(u64) s.*.ptr[i]
   
   return result
 
@@ -326,8 +326,8 @@ test 'cstring indexing':
   x: *u8 = cstr!('abc')
 
   -- casting each term to avoid overflow
-  -- if we do `(x[0] + x[1] + ..).cast(i32)` we have UB
-  try expect!(x[0].cast(i32) + x[1].cast(i32) + x[2].cast(i32) == 294)
+  -- if we do `cast(i32) (x[0] + x[1] + ..)` we have UB
+  try expect!(cast(i32)x[0] + cast(i32)x[1] + cast(i32)x[2] == 294)
 
 type Person = (name: *u8, age: u8)
 
@@ -453,10 +453,10 @@ test 'union2':
   x: [a: i64, b: i64, c: u8] = [a: 100]
   y: [a: i64, b: i64, c: u8] = [a: 300]
 
-  try expect!(x.a == x.b.cast(i64))
-  try expect!(x.a == x.c.cast(i64))
+  try expect!(x.a == cast(i64)x.b)
+  try expect!(x.a == cast(i64)x.c)
 
-  try expect!(y.a != y.c.cast(i64))
+  try expect!(y.a != cast(i64)y.c)
 
 test 'match':
   x: i32 = 10
