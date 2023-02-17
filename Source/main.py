@@ -12,7 +12,7 @@ from tempfile import gettempdir
 import utils
 
 def clang(llvm_ir_filepath, output_filepath, flags=[]):
-  cmd = f'clang -Wno-override-module {" ".join(flags)} {llvm_ir_filepath} -o {output_filepath} {" ".join(utils.libs_to_import)}'
+  cmd = f'clang -Wno-override-module {" ".join(flags)} {llvm_ir_filepath} -o {output_filepath} {utils.additional_clang_flags} {" ".join(utils.libs_to_import)}'
   # print(f'[+] {cmd}')
   return system(cmd), cmd
 
@@ -82,8 +82,10 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(path)}.ll'
   clang_flags = []
   
-  clang_flags.append('-O3' if is_release_build() in argv else '')
-  clang_flags.append(argv[argv.index('--clang') + 1])
+  clang_flags.append('-O2' if is_release_build() in argv else '')
+
+  if '--clang' in argv:
+    clang_flags.append(argv[argv.index('--clang') + 1])
 
   if has_to_be_runned:
     output_filepath = f'{tmp_folder}/{get_filename_from_path(path)}.exe'
@@ -132,15 +134,16 @@ def collect_zpp_files_in_dir(path):
   return [f'{path}/{elem}' for elem in listdir(path) if elem.endswith('.zpp')]
 
 def main():
-  if len(argv) == 1:
-    _, _, _, _, llvm_ir, _ = compile('samples/simple.zpp')
-    print(repr(llvm_ir))
-    return
+  if argv[1] == 'build':
+    return compile_file('Main.zpp', False, False)
 
   if argv[1] not in ['test', 'run']:
     return compile_file(argv[1], False, False)
   
-  srcpath = argv[2]
+  if argv[1] == 'run':
+    srcpath = 'Main.zpp'
+  else:
+    srcpath = argv[2]
   files = collect_zpp_files_in_dir(srcpath) if isdir(srcpath) and argv[1] == 'test' else [srcpath]
   
   for file in files:

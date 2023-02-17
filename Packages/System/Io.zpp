@@ -1,4 +1,5 @@
 from 'Libc.zpp'   import [ CFile, get_stdout, get_stdin, fwrite, fread ]
+from 'Memory.zpp' import [ malloc_collection, realloc_collection ]
 from 'String.zpp' import [ String, drop -> drop_string ]
 from 'Format.zpp' import [ FormatterArgs, format ]
 
@@ -8,26 +9,41 @@ fn input(prompt: String, buffer: *mut String) -> Result:
 
   return .Ok
 
+-- ? [Remember: drop the result]
 fn read_into(buffer: *mut String) -> Result:
   stdin: CFile = get_stdin()
-  input_size: u64 = Undefined
-  input_buffer: *mut u8 = Undefined
+  input_length: u64 = 32
+  input_buffer: *mut u8 = malloc_collection(input_length)
 
-  *buffer = (ptr: input_buffer, len: input_size)
+  i: u64 = 0
+  for .., True, i += 1:
+    if i == input_length:
+      input_length *= 2
+      input_buffer = input_buffer.realloc_collection(input_length / 2, input_length)
 
-  count_of_read_elems: u64 = fread(
-    input_buffer,
-    type_size!(|u8|),
-    input_size,
-    stdin
-  )
+    CharactersToRead: u64 = 1
+    count_of_read_elems: u64 = fread(
+      mut input_buffer[i],
+      type_size!(|u8|),
+      CharactersToRead,
+      stdin
+    )
 
-  -- when not all characters are read we return an error
-  return expect_or!(count_of_read_elems == input_size, .IoError)
+    if count_of_read_elems != CharactersToRead:
+      return .Err
+
+    c: u8 = input_buffer[i]
+
+    if c == `\n`:
+      input_buffer = input_buffer.realloc_collection(input_length, i)
+      break
+
+  *buffer = (ptr: input_buffer, len: i)
+  return .Ok
 
 fn printf(fmt: String, args: FormatterArgs) -> Result:
   -- processing format stuff into a fixed buffer
-  formatted_buffer: String = fmt.ref.format(args)
+  formatted_buffer: String = fmt.format(args)
   defer formatted_buffer.ref.drop_string()
 
   return print(formatted_buffer)

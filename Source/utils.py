@@ -6,7 +6,7 @@ from sys import argv
 from llvmlite.ir import Module
 
 def setup_globals():
-  global cache, output, libs_to_import
+  global cache, output, libs_to_import, additional_clang_flags
   global llvm_internal_functions_cache, strings_cache
   global llvm_internal_vars_cache, intrinsic_modules
   global enums_cache, enums_count, modules_setupper_llvm_fns
@@ -20,6 +20,7 @@ def setup_globals():
   enums_cache = { 'Ok': 0, 'Err': 1 }
   enums_count = 0
   modules_setupper_llvm_fns = []
+  additional_clang_flags = ''
 
   from lex import lex
   from parse import parse

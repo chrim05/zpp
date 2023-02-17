@@ -704,7 +704,7 @@ class Generator:
 
     get_resulting_realtype_of_bin_expr = lambda realdata: \
       realdata.realtype \
-        if bin_node.op.kind not in ['==', '!=', '<', '>', '<=', '<='] else \
+        if bin_node.op.kind not in ['==', '!=', '<', '>', '<=', '>='] else \
           self.ctx_if_int_or(RealType('u8_rt'))
   
     realdata_left = self.evaluate_node(bin_node.left, REALTYPE_PLACEHOLDER, is_top_call=False)
@@ -1508,6 +1508,18 @@ class Generator:
 
     return result
 
+  def evaluate_internal_call_to_clang_flags(self, call_node, ):
+    self.expect_generics_count(call_node, lambda count: count == 0)
+    self.expect_args_count(call_node, lambda count: count == 1)
+
+    flags = self.expect_node_is_literal_str(call_node.args[0])
+    utils.additional_clang_flags += f' {flags}'
+
+    return RealData(
+      RealType('void_rt'),
+      llvm_data=None
+    )
+
   def evaluate_internal_call_to_args(self, call_node, args_are_already_evaluated=False):
     self.expect_generics_count(call_node, lambda count: count == 0)
     self.expect_args_count(call_node, lambda count: count > 0)
@@ -2233,7 +2245,7 @@ class Generator:
     cond_rd = self.evaluate_condition_node(for_node.mid_node)
 
     if cond_rd.is_comptime_value():
-      self.cur_builder.branch(llvm_block_loop if cond_rd.value.is_true() else llvm_block_exit)
+      self.cur_builder.branch(llvm_block_loop if cond_rd.is_true() else llvm_block_exit)
     else:
       self.llvm_cbranch(self.cur_builder, cond_rd.llvm_data, llvm_block_loop, llvm_block_exit)
 

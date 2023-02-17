@@ -4,6 +4,10 @@ from 'Libc.zpp' import [
   memcopy -> cmemcopy
 ]
 
+from 'Math.zpp' import [
+  min
+]
+
 fn calculate_collection_buffer_size(|T| length: u64) -> u64:
   return type_size!(|T|) * length
 
@@ -21,6 +25,15 @@ fn copy_collection_to(|T| source: *T, target: *mut T, length: u64) -> void:
     cast(*mut u8) target,
     length.calculate_collection_buffer_size(|T|)
   )
+
+-- todo: clone_collection
+
+fn realloc_collection(|T| self: *mut T, old_length: u64, new_length: u64) -> *mut T:
+  new_collection: *mut T = malloc_collection(new_length)
+  self.copy_collection_to(new_collection, min(old_length, new_length))
+  self.free_collection()
+
+  return new_collection
 
 fn box(|T| initializer: T) -> *mut T:
   ptr: *mut T = malloc_collection(|T| 1)

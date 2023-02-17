@@ -24,4 +24,8 @@
 from 'System.String' import [ String ]
 
 fn main(argc: u32, argv: **u8) -> Result:
+  a: f32 = 0.2
+  b: f32 = 1.2
+  c: u8 = a >= b
+
   return .Ok

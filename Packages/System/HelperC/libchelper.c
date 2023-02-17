@@ -1,4 +1,4 @@
-// clang -O3 -c Packages/HelperC/libchelper.c -o Packages/HelperC/libchelper.o
+// clang -O3 -c Packages/System/HelperC/libchelper.c -o Packages/System/HelperC/libchelper.o
 
 #include <stdio.h>
 

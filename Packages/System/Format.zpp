@@ -280,8 +280,8 @@ fn process(self: *mut StringFormatter, output: *mut String) -> Result:
 -- ? [Remember: drop the result]
 -- Returns a fixed buffer containing the processed
 -- formatting stuff
-fn format(fmt: *String, args: FormatterArgs) -> String:
-  formatter: StringFormatter = create(fmt, args)
+fn format(fmt: String, args: FormatterArgs) -> String:
+  formatter: StringFormatter = create(ref fmt, args)
   defer formatter.mut.drop()
 
   try e: Result = formatter.mut.process(out result: String):

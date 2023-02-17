@@ -3,3 +3,9 @@ fn abs(|T| n: T) -> T:
 
 fn is_neg(|T| n: T) -> u8:
   return n < 0
+
+fn max(|T| a: T, b: T) -> T:
+  return a if a > b else b
+
+fn min(|T| a: T, b: T) -> T:
+  return a if a < b else b
