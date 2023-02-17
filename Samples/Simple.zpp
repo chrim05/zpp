@@ -21,5 +21,7 @@
 -- ! `export('c_fn_name') fn ..`
 -- + overflow/index_out_of_bounds/etc.. checking in debug builds
 
+from 'System.String' import [ String ]
+
 fn main(argc: u32, argv: **u8) -> Result:
   return .Ok

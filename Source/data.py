@@ -58,8 +58,8 @@ class Node:
       
       case 'unary_node':
         match self.op.kind:
-          case '&':
-            return f'{self.expr}.&'
+          case 'ref':
+            return f'{self.expr}.ref'
 
           case '*':
             return f'{self.expr}.*'
@@ -309,7 +309,7 @@ class RealType:
       case 'union_rt':
         return max(map(lambda k: self.fields[k].calculate_size(), self.fields))
       
-      case 'static_array_rt':
+      case 'static_array_rt' | 'static_vector_rt':
         return self.type.calculate_size() * self.length
 
       case _:
@@ -320,7 +320,7 @@ class RealType:
   
   def contains_generics_to_infer(self):
     match self.kind:
-      case 'ptr_rt' | 'static_array_rt':
+      case 'ptr_rt' | 'static_array_rt' | 'static_vector_rt':
         return self.type.contains_generics_to_infer()
       
       case 'fn_rt':
@@ -361,7 +361,7 @@ class RealType:
 
           return self.is_mut == obj.is_mut and self.type.internal_eq(obj.type, in_progress_struct_rt_ids)
         
-        case 'static_array_rt':
+        case 'static_array_rt' | 'static_vector_rt':
           if 'generic_to_infer_rt' in [self.type.kind, obj.type.kind]:
             return True
 
@@ -408,6 +408,9 @@ class RealType:
 
       case 'static_array_rt':
         return f'[{self.length} x {self.type.internal_repr(in_progress_struct_rt_ids)}]'
+      
+      case 'static_vector_rt':
+        return f'<{self.length} x {self.type.internal_repr(in_progress_struct_rt_ids)}>'
 
       case 'void_rt':
         return 'void'

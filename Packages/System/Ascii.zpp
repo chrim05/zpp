@@ -1,8 +1,8 @@
 from 'Range.zpp'  import [ in_range_inclusive, range ]
 from 'String.zpp' import [ String ]
 
--- todo -> use `const_cat!()` when available
--- todo -> use constants instead when available
+-- todo: use `const_cat!()` when available
+-- todo: use constants instead when available
 digits: String                   = '0123456789'
 letters_digits: String           = '0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ'
 lowercase_letters_digits: String = '0123456789abcdefghijklmnopqrstuvwxyz'

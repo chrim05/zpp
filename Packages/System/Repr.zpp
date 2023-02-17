@@ -5,25 +5,30 @@ from 'Math.zpp'   import [ abs, is_neg ]
 from 'Ascii.zpp'  import [ lowercase_letters_digits ]
 from 'String.zpp' import [ String ]
 
-fn count_digits(|T| n: T, base: T) -> u64:
+fn count_digits(|T| n: T, base: u8) -> u64:
   count: u64 = 1
-  for .., n >= base, n = n / base:
+  for .., n >= cast(T)base, n = n / cast(T)base:
     count += 1
   
   return count
+
+BinaryBase:  u8 =  2
+OctalBase:   u8 =  8
+DecimalBase: u8 = 10
+HexBase:     u8 = 16
 
 -- tipo i generics
 -- no è un compilatore completo solo che ora è in stage0 ed è scritto in python
 -- comunque guarda che ho fatto
 -- (tutto nativo)
-fn repr_digit(|T| n: T, base: T) -> u8:
-  assert!(n.in_range_inclusive(range(0, base - 1)))
+fn repr_digit(|T| n: T, base: u8) -> u8:
+  assert!(n.in_range_inclusive(range(0, cast(T)base - 1)))
   assert!(base.cast(u64).in_range_inclusive(range(0, lowercase_letters_digits.len - 1)))
 
   -- * this only worked with base in 0..<10
-  -- return `0` + cast(u8)n
+  --   return `0` + cast(u8)n
 
-  return lowercase_letters_digits.ref.nth(cast(u64) (n % base))
+  return lowercase_letters_digits.ref.nth(cast(u64) (n % cast(T)base))
 
 -- ? [Remember: drop the result]
 fn repr_pointer(|T| p: *T) -> String:
@@ -31,7 +36,7 @@ fn repr_pointer(|T| p: *T) -> String:
     return 'None'.ref.clone_array()
   
   n: u64 = p.ptr2int!()
-  count: u64 = n.count_digits(16)
+  count: u64 = n.count_digits(HexBase)
   offset: u64 = 2
   len: u64 = count + offset
   ptr: *mut u8 = malloc_collection(len)
@@ -46,9 +51,9 @@ fn repr_bool(n: u8) -> String:
   return 'True' if n else 'False'
 
 -- ? [Remember: drop the result]
--- todo -> add support for repr config
+-- todo: add support for repr config
 -- todo    (for example: repr_sign: True/False)
-fn repr_int(|T| n: T, base: T) -> String:
+fn repr_int(|T| n: T, base: u8) -> String:
   n_is_neg: u64 = cast(u64) n.is_neg()
   n = n.abs()
   count: u64 = n.count_digits(base)
@@ -63,7 +68,7 @@ fn repr_int(|T| n: T, base: T) -> String:
 
 fn internal_repr_int_into_buffer(|T|
   n: T,
-  base: T,
+  base: u8,
   whole_buffer_len: u64,
   buffer: *mut u8,
   limit: u64
@@ -80,15 +85,16 @@ fn internal_repr_int_into_buffer(|T|
   --   because we need to reserve the first slot
   --   for the minus sign character
   -- )
-  for i: u64 = whole_buffer_len, i != limit, n = n / base:
+  for i: u64 = whole_buffer_len, i != limit, n = n / cast(T)base:
     -- update the buffer index
     i -= 1
     -- extract the last digit
-    digit: T = n % base
+    digit: T = n % cast(T)base
     -- and write it to the buffer
     buffer[i] = digit.repr_digit(base)
   
   return (ptr: buffer, len: whole_buffer_len)
 
+-- ? [Remember: drop the result]
 fn repr_char(c: u8) -> String:
   return (ptr: c.box(), len: 1)

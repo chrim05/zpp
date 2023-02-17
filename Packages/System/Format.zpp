@@ -1,10 +1,18 @@
-from 'Repr.zpp'   import [ repr_int, repr_bool, repr_pointer, repr_char ]
 from 'Memory.zpp' import [ malloc_collection, copy_collection_to ]
 from 'String.zpp' import [ String, has_char_at_index ]
 from 'Libc.zpp'   import [ strlen -> cstrlen ]
 from 'Ascii.zpp'  import [ is_alphanum ]
 from 'Array.zpp'  import [ nth, eq ]
-from 'List.zpp'   import [
+
+from 'Repr.zpp' import [
+  DecimalBase,
+  repr_int,
+  repr_bool,
+  repr_pointer,
+  repr_char
+]
+
+from 'List.zpp' import [
   List,
   create -> create_list,
   drop   -> drop_list,
@@ -16,7 +24,7 @@ from 'List.zpp'   import [
 
 -- this type is responsible for representing different kinds of format
 -- examples: {s} {i32} etc ...
-type FormatterTag = u8
+type FormatterTag = Result
 -- args are contiguous in memory
 type FormatterArgs = *u8
 -- class for formatting strings
@@ -29,6 +37,7 @@ type StringFormatter = (
 )
 
 fn create(fmt: *String, args: FormatterArgs) -> StringFormatter:
+  -- todo: allocate a single bigger list and split it in two (DOD)
   return (
     index: 0,
     buffers: create_list(32),
@@ -108,21 +117,21 @@ fn collect_word(self: *mut StringFormatter, output: *mut String) -> Result:
   return .Ok
 
 string2tag_table: [13 x (w: String, t: FormatterTag)] = [
-  (w: 's', t: .FTagString),
-  (w: 'c', t: .FTagChar),
-  (w: '0', t: .FTagCstring),
-  (w: 'p', t: .FTagPointer),
-  (w: 'b', t: .FTagBool),
+  (w: 's', t: .String),
+  (w: 'c', t: .Char),
+  (w: '0', t: .Cstring),
+  (w: 'p', t: .Pointer),
+  (w: 'b', t: .Bool),
   
-  (w: 'i8',  t: .FTagInt8),
-  (w: 'i16', t: .FTagInt16),
-  (w: 'i32', t: .FTagInt32),
-  (w: 'i64', t: .FTagInt64),
+  (w: 'i8',  t: .Int8),
+  (w: 'i16', t: .Int16),
+  (w: 'i32', t: .Int32),
+  (w: 'i64', t: .Int64),
 
-  (w: 'u8',  t: .FTagUInt8),
-  (w: 'u16', t: .FTagUInt16),
-  (w: 'u32', t: .FTagUInt32),
-  (w: 'u64', t: .FTagUInt64)
+  (w: 'u8',  t: .UInt8),
+  (w: 'u16', t: .UInt16),
+  (w: 'u32', t: .UInt32),
+  (w: 'u64', t: .UInt64)
 ]
 
 -- ? [FailsWhen: the string ends without closing `}`]
@@ -148,7 +157,7 @@ fn fetch_arg(|T| self: *mut StringFormatter) -> T:
   return arg
 
 fn process_int_tag(|IntType| self: *mut StringFormatter, buffer: *mut String, to_drop: *mut u8) -> void:
-  *buffer = self.fetch_arg(|IntType|).repr_int(10)
+  *buffer = self.fetch_arg(|IntType|).repr_int(DecimalBase)
   *to_drop = True
 
 fn process_tag(self: *mut StringFormatter, tag: FormatterTag) -> Result:
@@ -156,45 +165,46 @@ fn process_tag(self: *mut StringFormatter, tag: FormatterTag) -> Result:
   to_drop: u8 = False
 
   match tag:
-    case .FTagString:
+    case .String:
       buffer = self.fetch_arg()
     
-    case .FTagChar:
+    case .Char:
       buffer = self.fetch_arg(|u8|).repr_char()
+      to_drop = True
 
-    case .FTagCstring:
+    case .Cstring:
       buffer.ptr = self.fetch_arg()
       buffer.len = buffer.ptr.cstrlen()
     
-    case .FTagBool:
+    case .Bool:
       buffer = self.fetch_arg().repr_bool()
 
-    case .FTagPointer:
+    case .Pointer:
       buffer = self.fetch_arg(|*u8|).repr_pointer()
       to_drop = True
     
-    case .FTagInt8:
+    case .Int8:
       self.process_int_tag(|i8| mut buffer, mut to_drop)
     
-    case .FTagInt16:
+    case .Int16:
       self.process_int_tag(|i16| mut buffer, mut to_drop)
     
-    case .FTagInt32:
+    case .Int32:
       self.process_int_tag(|i32| mut buffer, mut to_drop)
     
-    case .FTagInt64:
+    case .Int64:
       self.process_int_tag(|i64| mut buffer, mut to_drop)
     
-    case .FTagUInt8:
+    case .UInt8:
       self.process_int_tag(|u8| mut buffer, mut to_drop)
 
-    case .FTagUInt16:
+    case .UInt16:
       self.process_int_tag(|u16| mut buffer, mut to_drop)
 
-    case .FTagUInt32:
+    case .UInt32:
       self.process_int_tag(|u32| mut buffer, mut to_drop)
 
-    case .FTagUInt64:
+    case .UInt64:
       self.process_int_tag(|u64| mut buffer, mut to_drop)
 
     else:

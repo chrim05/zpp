@@ -1,7 +1,7 @@
 from '../Packages/Io.zpp' import [ printf ]
 
 fn main(argc: u32, argv: **u8) -> Result:
-  hash: u64 = cast(u64)argc - 1
+  hash: u64 = 0
 
   for .., argc > 1, argc -= 1:
     arg: *u8 = argv[argc - 1]
@@ -9,7 +9,5 @@ fn main(argc: u32, argv: **u8) -> Result:
     i: u64 = 0
     for .., arg[i] != None, i += 1:
       hash += cast(u64) arg[i]
-    
-    hash += i
 
   return printf('hash: {u64}\n', args!(hash))

@@ -1,6 +1,6 @@
 from os import getcwd
 from os.path import abspath
-from posixpath import relpath
+from posixpath import isabs, relpath
 from sys import argv
 
 from llvmlite.ir import Module
@@ -151,6 +151,17 @@ def get_filename_from_path(path):
   filename_with_ext = fixpath(path).split('/')[-1]
   return '.'.join(filename_with_ext.split('.')[:-1])
 
+def fix_package_path(path):
+  splits = path.split('.')
+  
+  if len(splits) == 2 and splits[-1] != 'zpp':
+    path = get_full_path_from_brother_file(
+      __file__,
+      f'../Packages/{splits[0]}/{splits[1]}.zpp'
+    )
+  
+  return path
+
 def is_debug_build():
   return not is_release_build()
 
@@ -163,9 +174,12 @@ def equal_dicts(d1, d2, ignore_keys):
   return d1_filtered == d2_filtered
 
 def get_full_path_from_brother_file(brother_filepath, filepath):
+  if isabs(filepath):
+    return filepath
+
   brother_filepath = fixpath(brother_filepath)
   return getabspath('/'.join(brother_filepath.split('/')[:-1]) + '/' + filepath)
 
 INTRINSICMOD_TRACE_ZPP = get_full_path_from_brother_file(__file__, 'IntrinsicModules/Trace.zpp')
-INTRINSICMOD_IO_ZPP = get_full_path_from_brother_file(__file__, '../Packages/Io.zpp')
+INTRINSICMOD_IO_ZPP = get_full_path_from_brother_file(__file__, '../Packages/System/Io.zpp')
 intrinsic_modules = [INTRINSICMOD_TRACE_ZPP, INTRINSICMOD_IO_ZPP]

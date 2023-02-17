@@ -1,5 +1,5 @@
 from data import Node
-from utils import error
+from utils import error, fix_package_path
 
 UNALLOWED_ON_BLOCK_DEFER_NODE = [
   'return_node', 'break_node',
@@ -110,8 +110,9 @@ class Parser:
       is_mut = self.consume_tok_if_match('mut') is not None
       return self.make_node('ptr_type_node', is_mut=is_mut, type=self.parse_type(), pos=pos)
     
-    if self.match_tok('['):
-      pos = self.consume_cur().pos
+    if self.match_toks(['[', '<']):
+      tok = self.consume_cur()
+      pos = tok.pos
 
       if self.match_pattern(['id', ':'], allow_first_on_new_line=True):
         return self.parse_union_type(pos)
@@ -123,9 +124,9 @@ class Parser:
         error('expected token `x`', i.pos)
       
       type = self.parse_type()
-      self.expect_and_consume(']')
+      self.expect_and_consume(']' if tok.kind == '[' else '>')
       return self.make_node(
-        'array_type_node',
+        'array_type_node' if tok.kind == '[' else 'vector_type_node',
         length=length,
         type=type,
         pos=pos
@@ -951,6 +952,8 @@ class Parser:
     path = self.expect_and_consume('str')
     self.expect_and_consume('import')
     ids = self.parse_import_ids()
+
+    path.value = fix_package_path(path.value)
 
     return self.make_node(
       'import_node',

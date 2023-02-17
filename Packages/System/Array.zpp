@@ -12,7 +12,7 @@ fn nth(|T| self: *Array[T], i: u64) -> T:
 
   return self.*.ptr[i]
 
--- todo -> write an optimized version of this
+-- todo: write an optimized version of this
 fn eq(|T| self: *Array[T], other: *Array[T]) -> u8:
   if self.*.len != other.*.len:
     return False

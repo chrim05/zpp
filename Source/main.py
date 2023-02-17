@@ -1,4 +1,4 @@
-from genericpath import isdir, isfile
+from genericpath import isdir
 from os import listdir, system
 from subprocess import Popen
 from lex import lex
@@ -11,10 +11,10 @@ from tempfile import gettempdir
 
 import utils
 
-def clang(llvm_ir_filepath, output_filepath, flags=''):
-  cmd = f'clang -Wno-override-module {flags} {" ".join(utils.libs_to_import)} {llvm_ir_filepath} -o {output_filepath}'
+def clang(llvm_ir_filepath, output_filepath, flags=[]):
+  cmd = f'clang -Wno-override-module {" ".join(flags)} {llvm_ir_filepath} -o {output_filepath} {" ".join(utils.libs_to_import)}'
   # print(f'[+] {cmd}')
-  return system(cmd)
+  return system(cmd), cmd
 
 def compile(path, gen_tests_instead=False):
   path = getabspath(path)
@@ -80,7 +80,10 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   _, _, _, _, llvm_ir, path = compile(srcpath, is_test)
   tmp_folder = fixpath(gettempdir())
   llvm_ir_file = f'{tmp_folder}/{get_filename_from_path(path)}.ll'
-  clang_flags = '-O3' if is_release_build() in argv else ''
+  clang_flags = []
+  
+  clang_flags.append('-O3' if is_release_build() in argv else '')
+  clang_flags.append(argv[argv.index('--clang') + 1])
 
   if has_to_be_runned:
     output_filepath = f'{tmp_folder}/{get_filename_from_path(path)}.exe'
@@ -104,8 +107,9 @@ def compile_file(srcpath, is_test, has_to_be_runned):
   if '--no-exe' in argv:
     return
   
-  if (exitcode := clang(llvm_ir_file, output_filepath, clang_flags)) != 0:
-    error(f'clang error, exitcode: {exitcode}', None)
+  if (clang_call := clang(llvm_ir_file, output_filepath, clang_flags))[0] != 0:
+    exitcode, cmd = clang_call
+    error(f'clang error, exitcode: {exitcode}, command: {repr(cmd)}', None)
   
   if has_to_be_runned:
     try:
